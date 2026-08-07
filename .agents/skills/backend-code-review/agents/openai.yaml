@@ -1,0 +1,4 @@
+interface:
+  display_name: "백엔드 코드 리뷰"
+  short_description: "백엔드 변경의 정확성과 위험을 근거로 검토"
+  default_prompt: "$backend-code-review를 사용해 백엔드 diff를 심각도별로 검토하고 머지 가능 여부를 판단해줘."
