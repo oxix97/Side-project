@@ -13,7 +13,6 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.util.UriComponentsBuilder;
 import org.stockwellness.application.port.in.auth.AuthUseCase;
 import org.stockwellness.application.port.in.auth.command.LoginCommand;
-import org.stockwellness.application.port.in.auth.result.LoginResult;
 import org.stockwellness.global.security.MemberPrincipal;
 
 @Slf4j
@@ -36,15 +35,15 @@ public class OAuth2LoginSuccessHandler extends SimpleUrlAuthenticationSuccessHan
                 principal.nickname(),
                 principal.loginType()
         );
-        LoginResult loginResult = authUseCase.login(command);
+        String exchangeCode = authUseCase.issueOAuthExchangeCode(command);
 
-        // 2. 프론트엔드 리다이렉트 (토큰 전달)
+        // 2. 프론트엔드 리다이렉트 (60초·1회 사용 교환 코드만 전달)
         String targetUrl = UriComponentsBuilder.fromUriString(frontendRedirectUrl)
-                .queryParam("accessToken", loginResult.accessToken())
-                .queryParam("refreshToken", loginResult.refreshToken())
+                .replaceQuery(null)
+                .queryParam("code", exchangeCode)
                 .build().toUriString();
 
-        log.info("OAuth2 로그인 성공 - 회원 ID: {}. 리다이렉트 경로: {}", loginResult.memberId(), targetUrl);
+        log.info("OAuth2 로그인 성공 - 일회용 교환 코드 redirect 발급 완료");
         getRedirectStrategy().sendRedirect(request, response, targetUrl);
     }
 }

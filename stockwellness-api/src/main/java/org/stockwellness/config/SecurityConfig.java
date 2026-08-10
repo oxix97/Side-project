@@ -43,7 +43,13 @@ public class SecurityConfig {
                 .sessionManagement((session) -> session
                         .sessionCreationPolicy(STATELESS))
                 .authorizeHttpRequests((authorize) -> authorize
-                        .requestMatchers("/api/v1/portfolios/**", "/api/v1/watchlist/**", "/api/v1/members/**").authenticated()
+                        .requestMatchers(
+                                "/api/v1/auth/logout",
+                                "/api/v1/test-support/**",
+                                "/api/v1/portfolios/**",
+                                "/api/v1/watchlist/**",
+                                "/api/v1/members/**"
+                        ).authenticated()
                         .anyRequest().permitAll())
                 .oauth2Login(oauth2 -> oauth2
                         .userInfoEndpoint(userInfo -> userInfo.userService(customOAuth2UserService))
@@ -58,20 +64,4 @@ public class SecurityConfig {
                 .build();
     }
 
-    private String[] permitPatterns() {
-        return new String[]{
-                "/api/v1/auth/**",          // 로그인, 재발급, 더미 로그인 등
-                "/api/v1/stocks/**",        // 종목 상세, 랭킹, 검색 — 비로그인 공개 (상세기능은 컨트롤러에서 권한 체크)
-                "/api/v1/market/**",        // 시장 지수 — 비로그인 공개
-                "/api/v1/sectors/**",       // 섹터 대시보드 — 비로그인 공개 (랭킹, 상세, 비교 분석)
-                "/oauth2/**",               // 소셜 로그인 콜백
-                "/login/oauth2/**",         // 소셜 로그인 엔드포인트
-                "/actuator/**",
-                "/docs/**",       // DocsController 및 yaml 파일
-                "/swagger-ui/**",          // Swagger UI 경로
-                "/v3/api-docs/**",         // (혹시 모를 호환성)
-                "/webjars/**",             // [필수] WebJars 리소스 (js, css)
-                "/favicon.ico"             // [권장] 파비콘 에러 방지
-        };
-    }
 }

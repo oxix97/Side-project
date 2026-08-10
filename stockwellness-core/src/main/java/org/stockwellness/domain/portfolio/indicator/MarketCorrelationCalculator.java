@@ -3,7 +3,7 @@ package org.stockwellness.domain.portfolio.indicator;
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.math.RoundingMode;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.stockwellness.domain.portfolio.math.FinancialMath;
@@ -22,10 +22,10 @@ public class MarketCorrelationCalculator implements IndicatorCalculator<Map<Stri
 
     @Override
     public Map<String, CorrelationMetrics> calculate(IndicatorContext context) {
-        Map<String, CorrelationMetrics> results = new HashMap<>();
+        Map<String, CorrelationMetrics> results = new LinkedHashMap<>();
         
         ReturnSeries portfolio = context.portfolioReturns();
-        BigDecimal portfolioTotalReturn = FinancialMath.calculateReturnRate(context.initialAmount(), context.finalAmount());
+        BigDecimal portfolioTotalReturn = calculateCumulativeReturn(portfolio);
 
         for (Map.Entry<String, ReturnSeries> entry : context.benchmarkReturns().entrySet()) {
             String ticker = entry.getKey();

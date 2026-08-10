@@ -27,8 +27,11 @@ import org.stockwellness.domain.portfolio.exception.PortfolioNotFoundException;
 import org.stockwellness.domain.stock.BenchmarkType;
 import org.stockwellness.domain.stock.Country;
 import org.stockwellness.domain.stock.Stock;
+import org.stockwellness.domain.stock.price.ChartPeriod;
 import org.stockwellness.domain.stock.price.BenchmarkPrice;
 import org.stockwellness.domain.stock.price.StockPrice;
+import org.stockwellness.global.error.ErrorCode;
+import org.stockwellness.global.error.exception.GlobalException;
 import org.stockwellness.global.util.FinanceCalculationUtil;
 import org.stockwellness.global.util.PortfolioMapperUtil;
 
@@ -117,36 +120,109 @@ public class PortfolioAnalysisService implements PortfolioAnalysisUseCase {
      */
     @Override
     public BacktestResult runBacktest(BacktestPortfolioCommand command) {
+        validateBacktestCommand(command);
         AnalysisContext context = dataLoader.loadContext(command.portfolioId(), command.memberId());
 
         // 종목별 목표 비중 추출 (사용자 입력 가중치가 있으면 우선 사용, 없으면 포트폴리오 기본 비중 사용)
-        Map<String, BigDecimal> weights = (command.weights() != null && !command.weights().isEmpty()) ?
-                normalizeWeights(command.weights()) :
-                context.portfolio().getItems().stream().collect(Collectors.toMap(PortfolioItem::getSymbol, PortfolioItem::getTargetWeight));
+        boolean usePortfolioWeights = command.weights() == null || command.weights().isEmpty();
+        Map<String, BigDecimal> weights = !usePortfolioWeights ?
+                new LinkedHashMap<>(command.weights()) :
+                context.portfolio().getItems().stream()
+                // 백테스트 시세가 없는 CASH와 0% 보유 자산은 가격 입력에서 제외합니다.
+                .filter(item -> item.getAssetType() == AssetType.STOCK
+                        && item.getTargetWeight() != null
+                        && item.getTargetWeight().compareTo(BigDecimal.ZERO) > 0)
+                .collect(Collectors.toMap(
+                        PortfolioItem::getSymbol,
+                        PortfolioItem::getTargetWeight,
+                        (first, ignored) -> first,
+                        LinkedHashMap::new
+                ));
+        if (usePortfolioWeights) {
+            weights = normalizeStockWeights(weights);
+        }
+        validateBacktestWeights(weights);
 
         List<String> symbols = new ArrayList<>(weights.keySet());
 
         // 선택된 기간에 따른 시세 데이터 로딩 및 시뮬레이션 실행
         LocalDate end = LocalDate.now();
-        LocalDate start = command.period().calculateStartDate(end);
+        ChartPeriod period = command.period() == null ? ChartPeriod.ONE_YEAR : command.period();
+        LocalDate start = period.calculateStartDate(end);
         List<String> benchmarkTickers = command.benchmarkTickers();
+        if (benchmarkTickers == null || benchmarkTickers.isEmpty()) {
+            throw new GlobalException(ErrorCode.INVALID_INPUT_VALUE);
+        }
         String primaryTicker = benchmarkTickers.getFirst();
         SimulationData data = simulationDataProvider.loadData(symbols, benchmarkTickers, start, end);
 
-        BacktestStrategy strategy = BacktestStrategy.valueOf(command.strategy().toUpperCase());
+        BacktestStrategy strategy = parseBacktestStrategy(command.strategy());
+        RebalancingPeriod rebalancingPeriod = command.rebalancingPeriod() == null
+                ? RebalancingPeriod.NONE
+                : command.rebalancingPeriod();
+        boolean dividendReinvested = command.dividendReinvested() == null || command.dividendReinvested();
 
         // 투자 방식에 따른 시뮬레이션 엔진 실행 (LumpSum: 거치식, DCA: 적립식)
         BacktestResult result = (strategy == BacktestStrategy.DCA) ?
-                backtestEngine.runDCA(data, weights, command.amount(), command.rebalancingPeriod(), primaryTicker, BigDecimal.valueOf(3.0), command.dividendReinvested()) :
-                backtestEngine.runLumpSum(data, weights, command.amount(), command.rebalancingPeriod(), primaryTicker, BigDecimal.valueOf(3.0), command.dividendReinvested());
+                backtestEngine.runDCA(data, weights, command.amount(), rebalancingPeriod, primaryTicker, BigDecimal.valueOf(3.0), dividendReinvested) :
+                backtestEngine.runLumpSum(data, weights, command.amount(), rebalancingPeriod, primaryTicker, BigDecimal.valueOf(3.0), dividendReinvested);
         // AI 어드바이저가 백테스트 결과를 분석하여 조언 생성
         String aiComment = aiAdvisorUseCase.generateBacktestAdvice(result, command.strategy(), primaryTicker);
         
         return new BacktestResult(
                 result.dailyResults(), result.cagr(), result.mdd(), result.relativeMdd(), result.sharpeRatio(),
                 result.totalReturnRate(), result.volatility(), result.alpha(), result.beta(),
-                result.bestYearRate(), result.worstYearRate(), result.itemReturns(), result.comparisons(), aiComment
+                result.bestYearRate(), result.worstYearRate(), result.itemReturns(), result.comparisons(), aiComment,
+                result.xirr(), result.timeWeightedReturnRate(), result.calculationMethod(), result.sortinoRatio(), result.recoveryPeriod()
         );
+    }
+
+    private void validateBacktestCommand(BacktestPortfolioCommand command) {
+        if (command == null || command.amount() == null || command.amount().compareTo(BigDecimal.ZERO) <= 0
+                || command.portfolioId() == null || command.memberId() == null) {
+            throw new GlobalException(ErrorCode.INVALID_INPUT_VALUE);
+        }
+        parseBacktestStrategy(command.strategy());
+        if (command.benchmarkTickers() == null || command.benchmarkTickers().isEmpty()
+                || command.benchmarkTickers().stream().anyMatch(ticker -> ticker == null || ticker.isBlank())) {
+            throw new GlobalException(ErrorCode.INVALID_INPUT_VALUE);
+        }
+    }
+
+    private Map<String, BigDecimal> normalizeStockWeights(Map<String, BigDecimal> weights) {
+        BigDecimal total = weights.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (total.compareTo(BigDecimal.ZERO) <= 0) {
+            return weights;
+        }
+        Map<String, BigDecimal> normalized = new LinkedHashMap<>();
+        weights.forEach((symbol, weight) -> normalized.put(
+                symbol,
+                weight.multiply(BigDecimal.valueOf(100)).divide(total, 8, RoundingMode.HALF_UP)
+        ));
+        return normalized;
+    }
+
+    private BacktestStrategy parseBacktestStrategy(String strategy) {
+        if (strategy == null || strategy.isBlank()) {
+            throw new GlobalException(ErrorCode.INVALID_INPUT_VALUE);
+        }
+        try {
+            return BacktestStrategy.valueOf(strategy.trim().toUpperCase());
+        } catch (IllegalArgumentException exception) {
+            throw new GlobalException(ErrorCode.INVALID_INPUT_VALUE);
+        }
+    }
+
+    private void validateBacktestWeights(Map<String, BigDecimal> weights) {
+        if (weights == null || weights.isEmpty()
+                || weights.entrySet().stream().anyMatch(entry -> entry.getKey() == null || entry.getKey().isBlank()
+                || entry.getValue() == null || entry.getValue().compareTo(BigDecimal.ZERO) <= 0)) {
+            throw new GlobalException(ErrorCode.INVALID_INPUT_VALUE);
+        }
+        BigDecimal total = weights.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (total.subtract(BigDecimal.valueOf(100)).abs().compareTo(new BigDecimal("0.000001")) > 0) {
+            throw new GlobalException(ErrorCode.INVALID_INPUT_VALUE);
+        }
     }
 
     /**
@@ -388,55 +464,64 @@ public class PortfolioAnalysisService implements PortfolioAnalysisUseCase {
     }
 
     /**
-     * 실시간 시세를 반영한 총 평가 금액 및 손익 지표(누적/일별) 계산 로직
+     * 마지막 완료 EOD 종가를 반영한 총 평가 금액 및 손익 지표(누적/일별) 계산 로직.
+     * 가격이 누락된 경우 매수가나 0을 합성하지 않고 상태와 nullable 합계를 반환한다.
      */
     private PortfolioValuationResult calculateValuation(AnalysisContext context, BacktestResult performanceResult) {
         Portfolio portfolio = context.portfolio();
-        Map<String, BigDecimal> currentPrices = portfolio.getItems().stream()
-                .collect(Collectors.toMap(PortfolioItem::getSymbol, i -> getCurrentPrice(i, context.priceMap())));
-
         BigDecimal totalPurchaseAmount = portfolio.calculateTotalPurchaseAmount();
-        BigDecimal currentTotalValue = portfolio.calculateTotalCurrentValue(currentPrices);
-        
-        Map<String, BigDecimal> previousPrices = portfolio.getItems().stream()
-                .collect(Collectors.toMap(PortfolioItem::getSymbol, i -> {
-                    if (i.getAssetType() == AssetType.CASH) return BigDecimal.ONE;
-                    StockPrice sp = getLatestPrice(i.getSymbol(), context.priceMap());
-                    return (sp != null && sp.getPreviousClosePrice() != null) ? sp.getPreviousClosePrice() : 
-                           (sp != null ? sp.getClosePrice() : i.getPurchasePrice());
-                }));
-        BigDecimal previousTotalValue = portfolio.calculateTotalCurrentValue(previousPrices);
+        LocalDate asOfDate = latestCompletedEodDate(context.priceMap());
+        List<String> missingSymbols = portfolio.getItems().stream()
+                .filter(item -> item.getAssetType() == AssetType.STOCK)
+                .filter(item -> latestAvailablePrice(item.getSymbol(), context.priceMap()) == null)
+                .map(PortfolioItem::getSymbol)
+                .toList();
+        long stockCount = portfolio.getItems().stream()
+                .filter(item -> item.getAssetType() == AssetType.STOCK)
+                .count();
+        ValuationStatus valuationStatus = stockCount == 0 || missingSymbols.isEmpty()
+                ? ValuationStatus.COMPLETE
+                : missingSymbols.size() == stockCount ? ValuationStatus.UNAVAILABLE : ValuationStatus.PARTIAL;
 
         // 수급 데이터 계산 (StockPrice에서 분리됨에 따라 0으로 초기화)
         BigDecimal totalInstitutionalNetBuying = BigDecimal.ZERO;
         BigDecimal totalForeignNetBuying = BigDecimal.ZERO;
         BigDecimal totalPersonNetBuying = BigDecimal.ZERO;
 
-        if (totalPurchaseAmount.compareTo(BigDecimal.ZERO) == 0 && currentTotalValue.compareTo(BigDecimal.ZERO) == 0) {
-            return new PortfolioValuationResult(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
-                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
-                context.stats() != null ? context.stats().getMdd() : BigDecimal.ZERO,
-                context.stats() != null ? context.stats().getSharpeRatio() : BigDecimal.ZERO,
-                context.stats() != null ? context.stats().getBeta() : BigDecimal.ZERO,
-                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO
-            );
+        BigDecimal currentTotalValue = null;
+        BigDecimal totalProfitLoss = null;
+        BigDecimal totalReturnRate = null;
+        BigDecimal dailyProfitLoss = null;
+        BigDecimal dailyReturnRate = null;
+        if (valuationStatus == ValuationStatus.COMPLETE) {
+            Map<String, BigDecimal> currentPrices = portfolio.getItems().stream()
+                    .collect(Collectors.toMap(PortfolioItem::getSymbol, item -> currentPriceForValuation(item, context.priceMap())));
+            currentTotalValue = portfolio.calculateTotalCurrentValue(currentPrices);
+            totalProfitLoss = currentTotalValue.subtract(totalPurchaseAmount);
+            totalReturnRate = totalPurchaseAmount.compareTo(BigDecimal.ZERO) == 0
+                    ? BigDecimal.ZERO
+                    : FinanceCalculationUtil.calculateRate(totalProfitLoss, totalPurchaseAmount);
+
+            Map<String, BigDecimal> previousPrices = portfolio.getItems().stream()
+                    .collect(Collectors.toMap(PortfolioItem::getSymbol, item -> previousPriceForValuation(item, context.priceMap())));
+            if (previousPrices.values().stream().allMatch(Objects::nonNull)) {
+                BigDecimal previousTotalValue = portfolio.calculateTotalCurrentValue(previousPrices);
+                dailyProfitLoss = currentTotalValue.subtract(previousTotalValue);
+                dailyReturnRate = FinanceCalculationUtil.calculateRate(dailyProfitLoss, previousTotalValue);
+            }
         }
 
-        // 전체 수익률 및 일별 수익률 계산
-        BigDecimal totalProfitLoss = currentTotalValue.subtract(totalPurchaseAmount);
-        BigDecimal dailyProfitLoss = currentTotalValue.subtract(previousTotalValue);
-
         return new PortfolioValuationResult(
-                totalPurchaseAmount, currentTotalValue, totalProfitLoss, 
-                FinanceCalculationUtil.calculateRate(totalProfitLoss, totalPurchaseAmount),
-                dailyProfitLoss, FinanceCalculationUtil.calculateRate(dailyProfitLoss, previousTotalValue),
+                totalPurchaseAmount, currentTotalValue, totalProfitLoss, totalReturnRate,
+                dailyProfitLoss, dailyReturnRate,
                 performanceResult != null ? performanceResult.cagr() : BigDecimal.ZERO,
                 performanceResult != null ? performanceResult.volatility() : BigDecimal.ZERO,
                 performanceResult != null ? performanceResult.alpha() : BigDecimal.ZERO,
                 context.stats() != null ? context.stats().getMdd() : BigDecimal.ZERO,
                 context.stats() != null ? context.stats().getSharpeRatio() : BigDecimal.ZERO,
                 context.stats() != null ? context.stats().getBeta() : BigDecimal.ZERO,
-                totalInstitutionalNetBuying, totalForeignNetBuying, totalPersonNetBuying
+                totalInstitutionalNetBuying, totalForeignNetBuying, totalPersonNetBuying,
+                valuationStatus, asOfDate, missingSymbols
         );
     }
 
@@ -566,6 +651,47 @@ public class PortfolioAnalysisService implements PortfolioAnalysisUseCase {
      */
     private StockPrice getLatestPrice(String symbol, Map<String, List<StockPrice>> priceMap) {
         return priceMap.getOrDefault(symbol, List.of()).stream().findFirst().orElse(null);
+    }
+
+    private StockPrice latestAvailablePrice(String symbol, Map<String, List<StockPrice>> priceMap) {
+        return priceMap.getOrDefault(symbol, List.of()).stream()
+                .filter(price -> price != null && price.getClosePrice() != null)
+                .filter(price -> price.getId() == null || price.getId().getBaseDate() == null
+                        || !price.getId().getBaseDate().isAfter(LocalDate.now()))
+                .findFirst()
+                .orElse(null);
+    }
+
+    private LocalDate latestCompletedEodDate(Map<String, List<StockPrice>> priceMap) {
+        return priceMap.values().stream()
+                .flatMap(List::stream)
+                .filter(price -> price != null && price.getClosePrice() != null && price.getId() != null)
+                .map(price -> price.getId().getBaseDate())
+                .filter(Objects::nonNull)
+                .filter(date -> !date.isAfter(LocalDate.now()))
+                .max(LocalDate::compareTo)
+                .orElse(null);
+    }
+
+    private BigDecimal currentPriceForValuation(PortfolioItem item, Map<String, List<StockPrice>> priceMap) {
+        if (item.getAssetType() == AssetType.CASH) return BigDecimal.ONE;
+        StockPrice price = latestAvailablePrice(item.getSymbol(), priceMap);
+        return price == null ? null : price.getClosePrice();
+    }
+
+    private BigDecimal previousPriceForValuation(PortfolioItem item, Map<String, List<StockPrice>> priceMap) {
+        if (item.getAssetType() == AssetType.CASH) return BigDecimal.ONE;
+        List<StockPrice> histories = priceMap.getOrDefault(item.getSymbol(), List.of());
+        StockPrice latest = latestAvailablePrice(item.getSymbol(), priceMap);
+        if (latest == null) return null;
+        if (latest.getPreviousClosePrice() != null) return latest.getPreviousClosePrice();
+        return histories.stream()
+                .filter(price -> price != null && price != latest && price.getClosePrice() != null)
+                .filter(price -> price.getId() == null || latest.getId() == null
+                        || price.getId().getBaseDate().isBefore(latest.getId().getBaseDate()))
+                .findFirst()
+                .map(StockPrice::getClosePrice)
+                .orElse(null);
     }
 
     /**

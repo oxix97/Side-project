@@ -24,6 +24,8 @@ spring:
       enabled: true
   kafka:
     bootstrap-servers: localhost:9092
+    listener:
+      auto-startup: false
     producer:
       retries: 0
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
@@ -100,6 +102,10 @@ resilience4j:
 app:
   ai:
     enabled: true
+  test-support:
+    attestation:
+      allowed-member-id: 7
+      database-id: isolated-e2e
 
 management:
   health:

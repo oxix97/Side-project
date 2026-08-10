@@ -1,6 +1,7 @@
 package org.stockwellness.adapter.in.web.portfolio;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -8,29 +9,37 @@ import java.util.List;
 import java.util.Map;
 
 import com.epages.restdocs.apispec.ResourceSnippetParameters;
+import com.epages.restdocs.apispec.Schema;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
+import org.springframework.restdocs.payload.FieldDescriptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
 import org.stockwellness.adapter.out.persistence.stock.repository.StockPriceRepository;
 import org.stockwellness.adapter.out.persistence.stock.repository.StockRepository;
+import org.stockwellness.adapter.in.web.portfolio.dto.CreateSimulatedPortfolioRequest;
 import org.stockwellness.application.port.in.portfolio.dto.PortfolioCreateRequest;
 import org.stockwellness.application.port.in.portfolio.dto.PortfolioItemRequest;
 import org.stockwellness.application.port.in.portfolio.dto.PortfolioResponse;
 import org.stockwellness.application.port.in.portfolio.dto.PortfolioUpdateRequest;
 import org.stockwellness.application.port.in.portfolio.result.AdviceResponse;
 import org.stockwellness.application.port.in.portfolio.result.PortfolioHealthResult;
+import org.stockwellness.application.port.in.portfolio.result.CreateSimulatedPortfolioResult;
 import org.stockwellness.application.service.portfolio.PortfolioFacade;
 import org.stockwellness.domain.portfolio.AssetType;
 import org.stockwellness.domain.portfolio.PortfolioItem;
 import org.stockwellness.domain.portfolio.advisor.AdviceAction;
 import org.stockwellness.domain.portfolio.diagnosis.type.DiagnosisCategory;
+import org.stockwellness.domain.portfolio.exception.PortfolioDomainException;
 import org.stockwellness.domain.stock.Currency;
 import org.stockwellness.domain.stock.MarketType;
 import org.stockwellness.domain.stock.Stock;
 import org.stockwellness.domain.stock.StockStatus;
+import org.stockwellness.domain.stock.exception.StockPriceException;
+import org.stockwellness.domain.stock.price.StockPrice;
+import org.stockwellness.domain.stock.price.StockPriceId;
 import org.stockwellness.fixture.PortfolioFixture;
 import org.stockwellness.support.RestDocsSupport;
 import org.stockwellness.support.annotation.MockMember;
@@ -39,6 +48,9 @@ import static com.epages.restdocs.apispec.ResourceDocumentation.resource;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.delete;
 import static org.springframework.restdocs.mockmvc.RestDocumentationRequestBuilders.get;
@@ -50,6 +62,8 @@ import static org.springframework.restdocs.request.RequestDocumentation.paramete
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.stockwellness.global.error.ErrorCode.PRICE_DATA_NOT_FOUND;
+import static org.stockwellness.global.error.ErrorCode.UNSUPPORTED_PORTFOLIO_CURRENCY;
 
 @Transactional
 @DisplayName("Portfolio 통합 테스트 (RestDocs)")
@@ -113,13 +127,60 @@ class PortfolioControllerTest extends RestDocsSupport {
 
         @Test
         @MockMember(id = 1L)
+        @DisplayName("가상 생성: 서버가 계산한 포트폴리오 ID와 공통 EOD 기준일을 반환한다")
+        void create_simulated_portfolio() throws Exception {
+            CreateSimulatedPortfolioRequest request = new CreateSimulatedPortfolioRequest(
+                    "내 포트폴리오",
+                    "장기 투자",
+                    new BigDecimal("10000000"),
+                    List.of(
+                            new CreateSimulatedPortfolioRequest.ItemRequest("005930", new BigDecimal("60.0")),
+                            new CreateSimulatedPortfolioRequest.ItemRequest("000660", new BigDecimal("40.0"))));
+            given(portfolioFacade.createSimulatedPortfolio(any()))
+                    .willReturn(new CreateSimulatedPortfolioResult(100L, LocalDate.of(2026, 8, 7)));
+
+            mockMvc.perform(post("/api/v1/portfolios/simulated")
+                            .header("Authorization", "Bearer {ACCESS_TOKEN}")
+                            .with(csrf())
+                            .contentType(APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(request)))
+                    .andExpect(status().isCreated())
+                    .andExpect(jsonPath("$.success").value(true))
+                    .andExpect(jsonPath("$.data.portfolioId").value(100L))
+                    .andExpect(jsonPath("$.data.asOfDate").value("2026-08-07"))
+                    .andDo(document("portfolio-simulated-create",
+                            resource(ResourceSnippetParameters.builder()
+                                    .tag("Portfolio")
+                                    .summary("가상 포트폴리오 생성")
+                                    .description("최신 공통 EOD 종가로 원화 종목의 가상 수량을 계산해 포트폴리오를 생성합니다. "
+                                            + "가격이 없으면 S002, 원화가 아닌 종목이면 P006을 반환합니다.")
+                                    .requestFields(
+                                            fieldWithPath("name").description("포트폴리오 이름"),
+                                            fieldWithPath("description").description("포트폴리오 설명").optional(),
+                                            fieldWithPath("totalAmount").description("총 투자 금액 (KRW, 0 초과)"),
+                                            fieldWithPath("items[].symbol").description("종목 코드"),
+                                            fieldWithPath("items[].targetWeight").description("목표 비중 합계 100 (%), 소수점 넷째 자리까지"))
+                                    .responseFields(new ArrayList<>(commonResponseFields()) {{
+                                        add(fieldWithPath("data.portfolioId").description("생성된 포트폴리오 ID"));
+                                        add(fieldWithPath("data.asOfDate").description("수량 계산에 사용한 공통 EOD 기준일"));
+                                    }})
+                                    .build())));
+        }
+
+        @Test
+        @MockMember(id = 1L)
         @DisplayName("조회: 포트폴리오 메인 화면용 상세 정보를 조회한다")
         void get_portfolio() throws Exception {
             // given
             var portfolio = PortfolioFixture.createEntityWithItems(100L, List.of(
                     PortfolioItem.createStock("AAPL", BigDecimal.TEN, BigDecimal.valueOf(150), "USD")
             ));
-            given(portfolioFacade.getPortfolio(any(), eq(100L))).willReturn(PortfolioResponse.from(portfolio, Collections.emptyMap(), Collections.emptyMap()));
+            StockPrice latestPrice = mock(StockPrice.class);
+            given(latestPrice.getClosePrice()).willReturn(BigDecimal.valueOf(160));
+            given(latestPrice.getId()).willReturn(new StockPriceId(LocalDate.of(2026, 8, 7), 1L));
+            PortfolioResponse response = PortfolioResponse.fromPriceHistories(
+                    portfolio, Map.of("AAPL", List.of(latestPrice)), Collections.emptyMap());
+            given(portfolioFacade.getPortfolio(any(), eq(100L))).willReturn(response);
 
             mockMvc.perform(get("/api/v1/portfolios/{portfolioId}", 100L)
                             .header("Authorization", "Bearer {ACCESS_TOKEN}")
@@ -141,8 +202,73 @@ class PortfolioControllerTest extends RestDocsSupport {
                                         add(fieldWithPath("data.totalPurchaseAmount").description("총 매수 금액"));
                                         add(fieldWithPath("data.currentTotalValue").description("총 평가 금액"));
                                         add(fieldWithPath("data.totalReturnRate").description("총 수익률"));
-                                        add(subsectionWithPath("data.items").description("포트폴리오 구성 종목 목록"));
+                                        add(fieldWithPath("data.valuationStatus").description("평가 상태 (COMPLETE, PARTIAL, UNAVAILABLE)"));
+                                        add(fieldWithPath("data.asOfDate").description("평가에 사용한 마지막 완료 EOD 기준일"));
+                                        add(fieldWithPath("data.missingSymbols").description("가격 누락 종목 코드 목록"));
+                                        add(fieldWithPath("data.items[].symbol").description("종목 심볼"));
+                                        add(fieldWithPath("data.items[].name").description("종목명"));
+                                        add(fieldWithPath("data.items[].quantity").description("보유 수량"));
+                                        add(fieldWithPath("data.items[].purchasePrice").description("매수 단가"));
+                                        add(fieldWithPath("data.items[].currentPrice").description("기준일 종가 (누락 시 null)").optional());
+                                        add(fieldWithPath("data.items[].currency").description("통화"));
+                                        add(fieldWithPath("data.items[].assetType").description("자산 유형"));
+                                        add(fieldWithPath("data.items[].purchaseAmount").description("매수 금액"));
+                                        add(fieldWithPath("data.items[].currentValue").description("기준일 평가액 (누락 시 null)").optional());
+                                        add(fieldWithPath("data.items[].returnRate").description("기준일 수익률 (누락 시 null)").optional());
+                                        add(fieldWithPath("data.items[].targetWeight").description("목표 비중"));
+                                        add(fieldWithPath("data.items[].priceStatus").description("가격 상태 (AVAILABLE, STALE, MISSING)"));
+                                        add(fieldWithPath("data.items[].priceAsOfDate").description("종목 가격 EOD 기준일").optional());
                                     }})
+                                    .build())));
+        }
+
+        @Test
+        @MockMember(id = 1L)
+        @DisplayName("조회: 가격 누락 상세는 합계와 종목 금융 수치를 null로 반환한다")
+        void get_portfolio_missing_price() throws Exception {
+            var portfolio = PortfolioFixture.createEntityWithItems(100L, List.of(
+                    PortfolioItem.createStock("AAPL", BigDecimal.TEN, BigDecimal.valueOf(150), "USD")
+            ));
+            PortfolioResponse response = PortfolioResponse.from(portfolio, Collections.emptyMap(), Collections.emptyMap());
+            given(portfolioFacade.getPortfolio(any(), eq(100L))).willReturn(response);
+
+            List<FieldDescriptor> fields = new ArrayList<>(commonResponseFields());
+            fields.addAll(List.of(
+                    fieldWithPath("data.id").description("포트폴리오 ID"),
+                    fieldWithPath("data.name").description("이름"),
+                    fieldWithPath("data.description").description("설명"),
+                    fieldWithPath("data.totalPurchaseAmount").description("총 매수 금액"),
+                    fieldWithPath("data.currentTotalValue").description("가격 누락 시 null인 총 평가 금액"),
+                    fieldWithPath("data.totalReturnRate").description("가격 누락 시 null인 총 수익률"),
+                    fieldWithPath("data.valuationStatus").description("평가 상태"),
+                    fieldWithPath("data.asOfDate").description("평가 기준일"),
+                    fieldWithPath("data.missingSymbols").description("가격 누락 종목"),
+                    fieldWithPath("data.items[].symbol").description("종목 심볼"),
+                    fieldWithPath("data.items[].name").description("종목명"),
+                    fieldWithPath("data.items[].quantity").description("보유 수량"),
+                    fieldWithPath("data.items[].purchasePrice").description("매수 단가"),
+                    fieldWithPath("data.items[].currentPrice").description("가격 누락 시 null인 기준일 종가").optional(),
+                    fieldWithPath("data.items[].currency").description("통화"),
+                    fieldWithPath("data.items[].assetType").description("자산 유형"),
+                    fieldWithPath("data.items[].purchaseAmount").description("매수 금액"),
+                    fieldWithPath("data.items[].currentValue").description("가격 누락 시 null인 기준일 평가액").optional(),
+                    fieldWithPath("data.items[].returnRate").description("가격 누락 시 null인 기준일 수익률").optional(),
+                    fieldWithPath("data.items[].targetWeight").description("목표 비중"),
+                    fieldWithPath("data.items[].priceStatus").description("가격 상태"),
+                    fieldWithPath("data.items[].priceAsOfDate").description("종목 기준일").optional()
+            ));
+
+            mockMvc.perform(get("/api/v1/portfolios/{portfolioId}", 100L)
+                            .header("Authorization", "Bearer {ACCESS_TOKEN}")
+                            .contentType(APPLICATION_JSON))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data.valuationStatus").value("UNAVAILABLE"))
+                    .andDo(document("portfolio-get-missing-price",
+                            resource(ResourceSnippetParameters.builder()
+                                    .tag("Portfolio")
+                                    .summary("포트폴리오 상세 조회 (가격 누락)")
+                                    .pathParameters(parameterWithName("portfolioId").description("포트폴리오 ID"))
+                                    .responseFields(fields)
                                     .build())));
         }
 
@@ -210,8 +336,13 @@ class PortfolioControllerTest extends RestDocsSupport {
             var portfolio = PortfolioFixture.createEntityWithItems(100L, List.of(
                     PortfolioItem.createStock("AAPL", BigDecimal.TEN, BigDecimal.valueOf(150), "USD")
             ));
-            PortfolioResponse response = PortfolioResponse.from(portfolio, Collections.emptyMap(), Collections.emptyMap());
-            given(portfolioFacade.getMyPortfolios(any())).willReturn(List.of(response));
+            StockPrice latestPrice = mock(StockPrice.class);
+            given(latestPrice.getClosePrice()).willReturn(BigDecimal.valueOf(160));
+            given(latestPrice.getId()).willReturn(new StockPriceId(LocalDate.of(2026, 8, 7), 1L));
+            PortfolioResponse response = PortfolioResponse.fromPriceHistories(
+                    portfolio, Map.of("AAPL", List.of(latestPrice)), Collections.emptyMap());
+            PortfolioResponse missingResponse = PortfolioResponse.from(portfolio, Collections.emptyMap(), Collections.emptyMap());
+            given(portfolioFacade.getMyPortfolios(any())).willReturn(List.of(response, missingResponse));
 
             mockMvc.perform(get("/api/v1/portfolios")
                             .header("Authorization", "Bearer {ACCESS_TOKEN}")
@@ -227,9 +358,24 @@ class PortfolioControllerTest extends RestDocsSupport {
                                         add(fieldWithPath("data[].name").description("이름"));
                                         add(fieldWithPath("data[].description").description("설명"));
                                         add(fieldWithPath("data[].totalPurchaseAmount").description("총 매수 금액"));
-                                        add(fieldWithPath("data[].currentTotalValue").description("총 평가 금액"));
-                                        add(fieldWithPath("data[].totalReturnRate").description("총 수익률"));
-                                        add(subsectionWithPath("data[].items").description("포트폴리오 구성 종목 목록"));
+                                        add(fieldWithPath("data[].currentTotalValue").description("총 평가 금액").optional());
+                                        add(fieldWithPath("data[].totalReturnRate").description("총 수익률").optional());
+                                        add(fieldWithPath("data[].valuationStatus").description("평가 상태 (COMPLETE, PARTIAL, UNAVAILABLE)"));
+                                        add(fieldWithPath("data[].asOfDate").description("평가에 사용한 마지막 완료 EOD 기준일").optional());
+                                        add(fieldWithPath("data[].missingSymbols").description("가격 누락 종목 코드 목록"));
+                                        add(fieldWithPath("data[].items[].symbol").description("종목 심볼"));
+                                        add(fieldWithPath("data[].items[].name").description("종목명"));
+                                        add(fieldWithPath("data[].items[].quantity").description("보유 수량"));
+                                        add(fieldWithPath("data[].items[].purchasePrice").description("매수 단가"));
+                                        add(fieldWithPath("data[].items[].currentPrice").description("기준일 종가 (누락 시 null)").optional());
+                                        add(fieldWithPath("data[].items[].currency").description("통화"));
+                                        add(fieldWithPath("data[].items[].assetType").description("자산 유형"));
+                                        add(fieldWithPath("data[].items[].purchaseAmount").description("매수 금액"));
+                                        add(fieldWithPath("data[].items[].currentValue").description("기준일 평가액 (누락 시 null)").optional());
+                                        add(fieldWithPath("data[].items[].returnRate").description("기준일 수익률 (누락 시 null)").optional());
+                                        add(fieldWithPath("data[].items[].targetWeight").description("목표 비중"));
+                                        add(fieldWithPath("data[].items[].priceStatus").description("가격 상태 (AVAILABLE, STALE, MISSING)"));
+                                        add(fieldWithPath("data[].items[].priceAsOfDate").description("종목 가격 EOD 기준일").optional());
                                     }})
                                     .build())));
         }
@@ -333,5 +479,92 @@ class PortfolioControllerTest extends RestDocsSupport {
                                     .responseFields(commonResponseFieldsWithNoData())
                                     .build())));
         }
+    }
+
+    @Nested
+    @DisplayName("실패 케이스")
+    class Failure {
+
+        @Test
+        @MockMember(id = 1L)
+        @DisplayName("가상 생성 실패: 소수 넷째 자리 초과 목표 비중은 G001로 거부한다")
+        void create_simulated_portfolio_rejects_target_weight_with_more_than_four_decimal_places() throws Exception {
+            CreateSimulatedPortfolioRequest request = new CreateSimulatedPortfolioRequest(
+                    "내 포트폴리오",
+                    "장기 투자",
+                    new BigDecimal("10000000"),
+                    List.of(
+                            new CreateSimulatedPortfolioRequest.ItemRequest("005930", new BigDecimal("50.00001")),
+                            new CreateSimulatedPortfolioRequest.ItemRequest("000660", new BigDecimal("49.99999"))));
+            given(portfolioFacade.createSimulatedPortfolio(any()))
+                    .willReturn(new CreateSimulatedPortfolioResult(100L, LocalDate.of(2026, 8, 7)));
+
+            mockMvc.perform(post("/api/v1/portfolios/simulated")
+                            .header("Authorization", "Bearer {ACCESS_TOKEN}")
+                            .with(csrf())
+                            .contentType(APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(request)))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.success").value(false))
+                    .andExpect(jsonPath("$.code").value("G001"));
+
+            verify(portfolioFacade, never()).createSimulatedPortfolio(any());
+        }
+
+        @Test
+        @MockMember(id = 1L)
+        @DisplayName("가상 생성 실패: EOD 가격이 없으면 S002를 반환하고 계약에 문서화한다")
+        void create_simulated_portfolio_price_data_not_found() throws Exception {
+            given(portfolioFacade.createSimulatedPortfolio(any()))
+                    .willThrow(new StockPriceException(PRICE_DATA_NOT_FOUND));
+
+            mockMvc.perform(post("/api/v1/portfolios/simulated")
+                            .header("Authorization", "Bearer {ACCESS_TOKEN}")
+                            .with(csrf())
+                            .contentType(APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(simulatedPortfolioRequest())))
+                    .andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.success").value(false))
+                    .andExpect(jsonPath("$.code").value("S002"))
+                    .andDo(document("portfolio-simulated-create-price-data-not-found",
+                            resource(ResourceSnippetParameters.builder()
+                                    .tag("Portfolio")
+                                    .summary("가상 포트폴리오 생성 - EOD 가격 누락")
+                                    .responseSchema(Schema.schema("ErrorResponse"))
+                                    .responseFields(commonResponseFieldsWithNoData())
+                                    .build())));
+        }
+
+        @Test
+        @MockMember(id = 1L)
+        @DisplayName("가상 생성 실패: 원화가 아닌 종목이면 P006을 반환하고 계약에 문서화한다")
+        void create_simulated_portfolio_unsupported_currency() throws Exception {
+            given(portfolioFacade.createSimulatedPortfolio(any()))
+                    .willThrow(new PortfolioDomainException(UNSUPPORTED_PORTFOLIO_CURRENCY));
+
+            mockMvc.perform(post("/api/v1/portfolios/simulated")
+                            .header("Authorization", "Bearer {ACCESS_TOKEN}")
+                            .with(csrf())
+                            .contentType(APPLICATION_JSON)
+                            .content(objectMapper.writeValueAsString(simulatedPortfolioRequest())))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.success").value(false))
+                    .andExpect(jsonPath("$.code").value("P006"))
+                    .andDo(document("portfolio-simulated-create-unsupported-currency",
+                            resource(ResourceSnippetParameters.builder()
+                                    .tag("Portfolio")
+                                    .summary("가상 포트폴리오 생성 - 지원하지 않는 통화")
+                                    .responseSchema(Schema.schema("ErrorResponse"))
+                                    .responseFields(commonResponseFieldsWithNoData())
+                                    .build())));
+        }
+    }
+
+    private CreateSimulatedPortfolioRequest simulatedPortfolioRequest() {
+        return new CreateSimulatedPortfolioRequest(
+                "내 포트폴리오",
+                "장기 투자",
+                new BigDecimal("10000000"),
+                List.of(new CreateSimulatedPortfolioRequest.ItemRequest("005930", new BigDecimal("100"))));
     }
 }

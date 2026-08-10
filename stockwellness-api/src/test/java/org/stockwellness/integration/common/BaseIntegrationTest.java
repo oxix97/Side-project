@@ -15,22 +15,21 @@ import org.springframework.data.redis.core.SetOperations;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 import org.springframework.data.redis.core.ZSetOperations;
-import org.springframework.http.MediaType;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.result.MockMvcResultHandlers;
 import org.springframework.transaction.annotation.Transactional;
 import org.stockwellness.adapter.out.persistence.stock.StockPriceCacheAdapter;
-import org.stockwellness.application.port.in.auth.dto.LoginRequest;
+import org.stockwellness.application.port.in.auth.AuthUseCase;
+import org.stockwellness.application.port.in.auth.command.LoginCommand;
+import org.stockwellness.application.port.in.auth.result.LoginResult;
+import org.stockwellness.application.port.out.auth.OAuthExchangeCodePort;
 import org.stockwellness.application.port.out.auth.RefreshTokenPort;
 import org.stockwellness.application.port.out.stock.PopularSearchPort;
 import org.stockwellness.domain.member.LoginType;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 /**
  * 모든 API 통합 테스트의 공통 설정을 관리하는 베이스 클래스.
@@ -61,6 +60,12 @@ public abstract class BaseIntegrationTest {
 
     @MockitoBean
     protected RefreshTokenPort refreshTokenPort;
+
+    @MockitoBean
+    protected OAuthExchangeCodePort oAuthExchangeCodePort;
+
+    @Autowired
+    protected AuthUseCase authUseCase;
 
     @MockitoBean
     protected StockPriceCacheAdapter stockPriceCacheAdapter;
@@ -97,19 +102,8 @@ public abstract class BaseIntegrationTest {
     /**
      * 테스트용 사용자 로그인을 수행하고 Access Token을 반환합니다.
      */
-    protected String loginAndGetToken(String email, String nickname) throws Exception {
-        LoginRequest request = new LoginRequest(email, nickname, LoginType.KAKAO);
-        String response = mockMvc.perform(post("/api/v1/auth/login")
-                        .with(csrf())
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(request)))
-                .andDo(MockMvcResultHandlers.print())
-                .andReturn().getResponse().getContentAsString();
-        
-        var node = objectMapper.readTree(response).get("data");
-        if (node == null || node.get("accessToken") == null) {
-            throw new RuntimeException("로그인 실패: " + response);
-        }
-        return node.get("accessToken").asText();
+    protected String loginAndGetToken(String email, String nickname) {
+        LoginResult result = authUseCase.login(new LoginCommand(email, nickname, LoginType.KAKAO));
+        return result.accessToken();
     }
 }

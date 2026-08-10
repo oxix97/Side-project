@@ -1,5 +1,7 @@
 package org.stockwellness.application.service.portfolio;
 
+import java.math.BigDecimal;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
@@ -14,6 +16,7 @@ import org.stockwellness.application.port.out.portfolio.AdvisorAiContext;
 import org.stockwellness.application.port.out.portfolio.AiAdviceProviderPort;
 import org.stockwellness.application.port.out.portfolio.PortfolioPort;
 import org.stockwellness.application.service.portfolio.internal.AdvisorAiDataLoader;
+import org.stockwellness.application.service.portfolio.internal.BacktestResult;
 import org.stockwellness.domain.portfolio.Portfolio;
 import org.stockwellness.domain.portfolio.advisor.AdviceAction;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -81,5 +84,68 @@ class AiAdvisorServiceTest {
         assertThat(response.content()).contains("리밸런싱 조언을 생성하지 못했습니다");
         assertThat(response.action()).isEqualTo(AdviceAction.REBALANCE);
         verify(aiAdviceProviderPort).getRebalancingAdvice(context);
+    }
+
+    @Test
+    @DisplayName("DCA 백테스트 조언은 null CAGR 대신 XIRR을 사용한다")
+    void generateBacktestAdvice_dcaUsesXirrWhenCagrIsNull() {
+        BacktestResult dcaResult = new BacktestResult(
+                Collections.emptyList(),
+                null,
+                BigDecimal.valueOf(-8),
+                BigDecimal.valueOf(-3),
+                BigDecimal.valueOf(1.2),
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(2),
+                BigDecimal.valueOf(0.9),
+                BigDecimal.valueOf(15),
+                BigDecimal.valueOf(-4),
+                Collections.emptyMap(),
+                Collections.emptyList(),
+                null,
+                BigDecimal.valueOf(12),
+                BigDecimal.valueOf(10),
+                "DCA_XIRR_TWR",
+                BigDecimal.valueOf(1.4),
+                20L
+        );
+
+        String advice = aiAdvisorService.generateBacktestAdvice(dcaResult, "DCA", "SPX");
+
+        assertThat(advice).contains("XIRR");
+        assertThat(advice).contains("12.00%");
+    }
+
+    @Test
+    @DisplayName("거치식 백테스트 조언은 CAGR을 백분율 포인트로 표시한다")
+    void generateBacktestAdvice_lumpSumUsesCagrWithoutRescaling() {
+        BacktestResult lumpSumResult = new BacktestResult(
+                Collections.emptyList(),
+                BigDecimal.valueOf(15),
+                BigDecimal.valueOf(-8),
+                BigDecimal.valueOf(-3),
+                BigDecimal.valueOf(1.2),
+                BigDecimal.valueOf(20),
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(2),
+                BigDecimal.valueOf(0.9),
+                BigDecimal.valueOf(25),
+                BigDecimal.valueOf(-4),
+                Collections.emptyMap(),
+                Collections.emptyList(),
+                null,
+                null,
+                BigDecimal.valueOf(20),
+                "LUMP_SUM_CAGR_TWR",
+                BigDecimal.valueOf(1.4),
+                20L
+        );
+
+        String advice = aiAdvisorService.generateBacktestAdvice(lumpSumResult, "LUMP_SUM", "SPX");
+
+        assertThat(advice).contains("CAGR");
+        assertThat(advice).contains("15.00%");
+        assertThat(advice).doesNotContain("1500.00%");
     }
 }

@@ -40,6 +40,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
 @ExtendWith(MockitoExtension.class)
 class PortfolioAnalysisServiceTest {
@@ -173,10 +174,14 @@ class PortfolioAnalysisServiceTest {
     @DisplayName("백테스팅 실행: 선택한 전략에 따라 백테스팅 엔진을 호출하고 결과를 반환한다")
     void runBacktest_Success() {
         // given
-        BacktestPortfolioCommand command = new BacktestPortfolioCommand(MEMBER_ID, PORTFOLIO_ID, "LUMP_SUM", BigDecimal.valueOf(10000000), List.of("005930"), ChartPeriod.ONE_YEAR, true, RebalancingPeriod.MONTHLY, Map.of());
+        List<String> benchmarkTickers = List.of("SPX", "0001", "1001");
+        BacktestPortfolioCommand command = new BacktestPortfolioCommand(MEMBER_ID, PORTFOLIO_ID, "LUMP_SUM", BigDecimal.valueOf(10000000), benchmarkTickers, ChartPeriod.ONE_YEAR, true, RebalancingPeriod.MONTHLY, Map.of());
         
         Portfolio portfolio = Portfolio.create(MEMBER_ID, "테스트", "설명");
-        portfolio.updateItems(List.of(PortfolioItem.createStock("005930", BigDecimal.ONE, BigDecimal.valueOf(50000), "KRW", BigDecimal.valueOf(100), LocalDate.now())));
+        portfolio.updateItems(List.of(
+                PortfolioItem.createStock("005930", BigDecimal.ONE, BigDecimal.valueOf(50000), "KRW", BigDecimal.valueOf(50), LocalDate.now()),
+                PortfolioItem.createCash(BigDecimal.valueOf(100000), "KRW", BigDecimal.valueOf(50), LocalDate.now())
+        ));
         AnalysisContext context = new AnalysisContext(portfolio, Map.of(), Map.of(), null);
         
         given(dataLoader.loadContext(PORTFOLIO_ID, MEMBER_ID)).willReturn(context);
@@ -195,6 +200,64 @@ class PortfolioAnalysisServiceTest {
         // then
         assertThat(result.aiComment()).isEqualTo("AI 조언입니다.");
         assertThat(result.cagr()).isEqualByComparingTo("10");
+        verify(simulationDataProvider).loadData(anyList(), eq(benchmarkTickers), any(), any());
+    }
+
+    @Test
+    @DisplayName("DCA 백테스팅: CAGR은 null로 두고 XIRR/TWR을 보존한다")
+    void runBacktest_DcaPreservesXirr() {
+        List<String> benchmarkTickers = List.of("SPX", "0001", "1001");
+        BacktestPortfolioCommand command = new BacktestPortfolioCommand(
+                MEMBER_ID,
+                PORTFOLIO_ID,
+                "DCA",
+                BigDecimal.valueOf(100000),
+                benchmarkTickers,
+                ChartPeriod.ONE_YEAR,
+                true,
+                RebalancingPeriod.NONE,
+                Map.of()
+        );
+
+        Portfolio portfolio = Portfolio.create(MEMBER_ID, "테스트", "설명");
+        portfolio.updateItems(List.of(PortfolioItem.createStock(
+                "005930", BigDecimal.ONE, BigDecimal.valueOf(50000), "KRW", BigDecimal.valueOf(100), LocalDate.now())));
+        AnalysisContext context = new AnalysisContext(portfolio, Map.of(), Map.of(), null);
+        given(dataLoader.loadContext(PORTFOLIO_ID, MEMBER_ID)).willReturn(context);
+        given(simulationDataProvider.loadData(anyList(), eq(benchmarkTickers), any(), any()))
+                .willReturn(new SimulationData(Map.of(), Map.of()));
+
+        BacktestResult dcaResult = new BacktestResult(
+                Collections.emptyList(),
+                null,
+                BigDecimal.valueOf(-8),
+                BigDecimal.valueOf(-3),
+                BigDecimal.valueOf(1.2),
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(10),
+                BigDecimal.valueOf(2),
+                BigDecimal.valueOf(0.9),
+                BigDecimal.valueOf(15),
+                BigDecimal.valueOf(-4),
+                Map.of(),
+                Collections.emptyList(),
+                "DCA advice",
+                BigDecimal.valueOf(12),
+                BigDecimal.valueOf(10),
+                "DCA_XIRR_TWR",
+                BigDecimal.valueOf(1.4),
+                20L
+        );
+        given(backtestEngine.runDCA(any(), anyMap(), any(), any(RebalancingPeriod.class), anyString(), any(), anyBoolean()))
+                .willReturn(dcaResult);
+        given(aiAdvisorUseCase.generateBacktestAdvice(any(), anyString(), anyString())).willReturn("DCA advice");
+
+        BacktestResult result = portfolioAnalysisService.runBacktest(command);
+
+        assertThat(result.cagr()).isNull();
+        assertThat(result.xirr()).isEqualByComparingTo("12");
+        assertThat(result.timeWeightedReturnRate()).isEqualByComparingTo("10");
+        assertThat(result.calculationMethod()).isEqualTo("DCA_XIRR_TWR");
     }
 
     @Test

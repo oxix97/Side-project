@@ -1,5 +1,7 @@
 package org.stockwellness.application.service.auth;
 
+import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Optional;
 
@@ -19,6 +21,7 @@ import org.stockwellness.adapter.out.security.jwt.JwtProvider;
 import org.stockwellness.application.port.in.auth.command.LoginCommand;
 import org.stockwellness.application.port.in.auth.result.LoginResult;
 import org.stockwellness.application.port.in.auth.result.ReissueResult;
+import org.stockwellness.application.port.out.auth.OAuthExchangeCodePort;
 import org.stockwellness.application.port.out.auth.RefreshTokenPort;
 import org.stockwellness.application.port.out.member.LoadMemberPort;
 import org.stockwellness.application.port.out.member.SaveMemberPort;
@@ -49,6 +52,8 @@ class AuthServiceTest {
     private JwtProvider jwtProvider;
     @Mock
     private RefreshTokenPort refreshTokenPort;
+    @Mock
+    private OAuthExchangeCodePort oAuthExchangeCodePort;
     @Mock
     private JwtProperties jwtProperties;
     @Mock
@@ -128,6 +133,58 @@ class AuthServiceTest {
                     .isInstanceOf(BusinessException.class)
                     .hasFieldOrPropertyWithValue("errorCode", ErrorCode.UNAUTHORIZED);
         }
+
+        @Test
+        @DisplayName("OAuth 로그인은 토큰 응답을 60초 일회용 교환 코드로 저장한다")
+        void issue_oauth_exchange_code_with_sixty_second_ttl() {
+            LoginCommand command = AuthFixture.createLoginCommand();
+            Member member = AuthFixture.createMember();
+            ReflectionTestUtils.setField(member, "createdAt", LocalDateTime.now());
+            given(loadMemberPort.loadMemberByEmailAndLoginType(any(), any())).willReturn(Optional.of(member));
+            given(jwtProvider.generateAccessToken(member)).willReturn(AuthFixture.ACCESS_TOKEN);
+            given(jwtProvider.generateRefreshToken(member)).willReturn(AuthFixture.REFRESH_TOKEN);
+            given(oAuthExchangeCodePort.issue(any(LoginResult.class), any(Duration.class)))
+                    .willReturn("opaque-code");
+
+            String code = authService.issueOAuthExchangeCode(command);
+
+            assertThat(code).isEqualTo("opaque-code");
+            verify(oAuthExchangeCodePort).issue(any(LoginResult.class), org.mockito.ArgumentMatchers.eq(Duration.ofSeconds(60)));
+        }
+    }
+
+    @Nested
+    @DisplayName("OAuth 교환 코드 (Exchange)")
+    class Exchange {
+        @Test
+        @DisplayName("같은 교환 코드는 한 번만 사용할 수 있다")
+        void exchange_code_is_single_use() {
+            LoginResult loginResult = new LoginResult(
+                    AuthFixture.ACCESS_TOKEN,
+                    AuthFixture.REFRESH_TOKEN,
+                    AuthFixture.MEMBER_ID,
+                    AuthFixture.EMAIL,
+                    AuthFixture.NICKNAME,
+                    LocalDate.of(2026, 8, 10)
+            );
+            given(oAuthExchangeCodePort.consume("opaque-code"))
+                    .willReturn(Optional.of(loginResult), Optional.empty());
+
+            assertThat(authService.exchange("opaque-code")).isEqualTo(loginResult);
+            assertThatThrownBy(() -> authService.exchange("opaque-code"))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.OAUTH_EXCHANGE_CODE_INVALID);
+        }
+
+        @Test
+        @DisplayName("만료되거나 존재하지 않는 교환 코드는 A009를 반환한다")
+        void invalid_exchange_code_returns_a009() {
+            given(oAuthExchangeCodePort.consume("expired-code")).willReturn(Optional.empty());
+
+            assertThatThrownBy(() -> authService.exchange("expired-code"))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.OAUTH_EXCHANGE_CODE_INVALID);
+        }
     }
 
     @Nested
@@ -189,6 +246,19 @@ class AuthServiceTest {
 
             // then
             verify(refreshTokenPort).deleteByMemberId(AuthFixture.MEMBER_ID);
+        }
+
+        @Test
+        @DisplayName("로그아웃 후 기존 RefreshToken 재발급은 A005를 반환한다")
+        void reissue_after_logout_returns_a005() {
+            given(jwtProvider.validateAndGetId(AuthFixture.REFRESH_TOKEN)).willReturn(AuthFixture.MEMBER_ID);
+            given(refreshTokenPort.findByMemberId(AuthFixture.MEMBER_ID)).willReturn(null);
+
+            authService.logout(AuthFixture.MEMBER_ID);
+
+            assertThatThrownBy(() -> authService.reissue(AuthFixture.REFRESH_TOKEN))
+                    .isInstanceOf(BusinessException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.INVALID_REFRESH_TOKEN);
         }
     }
 }

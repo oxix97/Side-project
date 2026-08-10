@@ -1,5 +1,6 @@
 package org.stockwellness.application.service.auth;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 
@@ -15,6 +16,7 @@ import org.stockwellness.application.port.in.auth.AuthUseCase;
 import org.stockwellness.application.port.in.auth.command.LoginCommand;
 import org.stockwellness.application.port.in.auth.result.LoginResult;
 import org.stockwellness.application.port.in.auth.result.ReissueResult;
+import org.stockwellness.application.port.out.auth.OAuthExchangeCodePort;
 import org.stockwellness.application.port.out.auth.RefreshTokenPort;
 import org.stockwellness.application.port.out.member.LoadMemberPort;
 import org.stockwellness.application.port.out.member.SaveMemberPort;
@@ -32,10 +34,13 @@ import org.stockwellness.global.util.DateUtil;
 @Transactional
 @Service
 public class AuthService implements AuthUseCase {
+    private static final Duration OAUTH_EXCHANGE_CODE_TTL = Duration.ofSeconds(60);
+
     private final LoadMemberPort loadMemberPort;
     private final SaveMemberPort saveMemberPort;
     private final JwtProvider jwtProvider;
     private final RefreshTokenPort refreshTokenPort;
+    private final OAuthExchangeCodePort oAuthExchangeCodePort;
     private final JwtProperties jwtProperties;
     private final ApplicationEventPublisher eventPublisher;
 
@@ -72,6 +77,18 @@ public class AuthService implements AuthUseCase {
                 member.getNickname(),
                 member.getCreatedAt().toLocalDate()
         );
+    }
+
+    @Override
+    public String issueOAuthExchangeCode(LoginCommand command) {
+        LoginResult loginResult = login(command);
+        return oAuthExchangeCodePort.issue(loginResult, OAUTH_EXCHANGE_CODE_TTL);
+    }
+
+    @Override
+    public LoginResult exchange(String code) {
+        return oAuthExchangeCodePort.consume(code)
+                .orElseThrow(() -> new GlobalException(ErrorCode.OAUTH_EXCHANGE_CODE_INVALID));
     }
 
     @Override

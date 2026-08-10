@@ -22,6 +22,7 @@ import org.stockwellness.application.port.out.stock.LoadBenchmarkPort;
 import org.stockwellness.application.port.out.stock.StockPort;
 import org.stockwellness.application.port.out.stock.StockPricePort;
 import org.stockwellness.domain.stock.MarketType;
+import org.stockwellness.domain.stock.Currency;
 import org.stockwellness.domain.stock.Stock;
 import org.stockwellness.domain.stock.exception.StockPriceException;
 import org.stockwellness.domain.stock.price.ChartFrequency;
@@ -128,6 +129,7 @@ class StockChartServiceTest {
             // given
             ChartQuery query = new ChartQuery(ticker, ChartPeriod.ONE_YEAR, ChartFrequency.DAILY, true);
             given(mockStock.getMarketType()).willReturn(MarketType.KOSPI);
+            given(mockStock.getCurrency()).willReturn(Currency.USD);
             given(mockStock.getName()).willReturn("애플");
             given(stockPort.loadStockByTicker(ticker)).willReturn(Optional.of(mockStock));
 
@@ -148,6 +150,7 @@ class StockChartServiceTest {
 
             // then
             assertThat(response.ticker()).isEqualTo(ticker);
+            assertThat(response.currency()).isEqualTo("USD");
             assertThat(response.prices()).hasSize(2);
             assertThat(response.benchmarks()).hasSize(2);
             assertThat(response.benchmarks().get(1).returnRate()).isEqualByComparingTo("5.0"); // (2100-2000)/2000 * 100
@@ -190,6 +193,7 @@ class StockChartServiceTest {
         void success() {
             // given
             given(mockStock.getMarketType()).willReturn(MarketType.KOSPI);
+            given(mockStock.getCurrency()).willReturn(Currency.USD);
             given(stockPort.loadStockByTicker(ticker)).willReturn(Optional.of(mockStock));
 
             List<StockPriceResult> mockPrices = List.of(
@@ -208,8 +212,20 @@ class StockChartServiceTest {
             ReturnRateResponse response = stockChartService.calculateReturn(ticker, ChartPeriod.ONE_YEAR);
 
             // then
+            assertThat(response.currency()).isEqualTo("USD");
             assertThat(response.stockReturnRate()).isEqualByComparingTo("50.0");
             assertThat(response.benchmarkReturnRate()).isEqualByComparingTo("10.0");
+        }
+
+        @Test
+        @DisplayName("실패: 수익률 조회 기간에 시세가 없으면 S002를 반환한다")
+        void failNoPriceData() {
+            given(stockPort.loadStockByTicker(ticker)).willReturn(Optional.of(mockStock));
+            given(stockPricePort.loadPricesByTicker(eq(ticker), any(), any())).willReturn(List.of());
+
+            assertThatThrownBy(() -> stockChartService.calculateReturn(ticker, ChartPeriod.ONE_YEAR))
+                    .isInstanceOf(StockPriceException.class)
+                    .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PRICE_DATA_NOT_FOUND);
         }
     }
 

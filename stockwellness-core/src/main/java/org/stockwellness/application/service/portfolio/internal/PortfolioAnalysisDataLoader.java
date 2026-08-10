@@ -46,7 +46,7 @@ public class PortfolioAnalysisDataLoader {
                 .collect(Collectors.toMap(Stock::getTicker, s -> s));
 
         // 1. DB에서 최신 시세 조회
-        Map<String, List<StockPrice>> priceMap = new HashMap<>(stockPricePort.loadRecentHistoriesBatch(symbols, 1));
+        Map<String, List<StockPrice>> priceMap = new HashMap<>(stockPricePort.loadRecentHistoriesBatch(symbols, 2));
 
         // 2. [Fallback] DB에 데이터가 없는 종목들은 KIS API로 실시간 시세 조회 (TPS 경합 방지를 위해 제거)
         /*

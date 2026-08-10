@@ -92,21 +92,37 @@ public class AiAdvisorService implements AiAdvisorUseCase {
      */
     @Override
     public String generateBacktestAdvice(BacktestResult result, String strategy, String benchmark) {
-        // 백분율 단위로 변환하여 계산
-        BigDecimal cagr = result.cagr().multiply(BigDecimal.valueOf(100));
-        BigDecimal mdd = result.mdd().multiply(BigDecimal.valueOf(100)).abs();
+        // LUMP_SUM은 CAGR, DCA는 현금흐름을 반영한 XIRR을 우선 사용합니다.
+        // XIRR이 계산 불가능한 짧은 기간에는 TWR을 표시하되, null을 0으로
+        // 바꾸어 실제로 계산되지 않은 수익률을 보고하지 않습니다.
+        boolean dcaStrategy = "DCA".equalsIgnoreCase(strategy);
+        String returnMetric = dcaStrategy ? "XIRR" : "CAGR";
+        BigDecimal annualizedReturn = dcaStrategy ? result.xirr() : result.cagr();
+        if (annualizedReturn == null && result.timeWeightedReturnRate() != null) {
+            annualizedReturn = result.timeWeightedReturnRate();
+            returnMetric = "TWR";
+        }
+        // BacktestResult rates are already percentage points (e.g. 12 means
+        // 12%), matching the API contract. Keep the display unit unchanged.
+        BigDecimal annualizedPercent = annualizedReturn;
+        BigDecimal mdd = result.mdd().abs();
         BigDecimal sharpe = result.sharpeRatio();
-        BigDecimal alpha = result.alpha().multiply(BigDecimal.valueOf(100));
+        BigDecimal alpha = result.alpha();
         BigDecimal beta = result.beta();
-        BigDecimal volatility = result.volatility().multiply(BigDecimal.valueOf(100));
+        BigDecimal volatility = result.volatility();
 
         String strategyName = "LUMP_SUM".equals(strategy) ? "거액 적립(Lump-sum)" : "정기 적립(DCA)";
         StringBuilder advice = new StringBuilder();
 
-        // 1. [총평] 성과 요약 (CAGR 및 MDD 기반)
+        // 1. [총평] 성과 요약 (CAGR/XIRR/TWR 및 MDD 기반)
         advice.append(String.format("📊 [%s 전략 시뮬레이션 결과]\n", strategyName));
-        advice.append(String.format("지난 기간 동안 연평균 %.2f%%의 수익률(CAGR)을 기록했으며, 최악의 시기에도 %.2f%%(MDD) 수준으로 자산을 방어했습니다. ",
-                cagr, mdd));
+        if (annualizedPercent == null) {
+            advice.append(String.format("지난 기간 동안 연환산 수익률(%s)을 계산할 수 없으며, 최악의 시기에도 %.2f%%(MDD) 수준으로 자산을 방어했습니다. ",
+                    returnMetric, mdd));
+        } else {
+            advice.append(String.format("지난 기간 동안 연평균 %.2f%%의 수익률(%s)을 기록했으며, 최악의 시기에도 %.2f%%(MDD) 수준으로 자산을 방어했습니다. ",
+                    annualizedPercent, returnMetric, mdd));
+        }
 
         // 2. 수익성 및 지수 대비 성과 분석 (Alpha)
         if (alpha.compareTo(BigDecimal.ZERO) > 0) {
