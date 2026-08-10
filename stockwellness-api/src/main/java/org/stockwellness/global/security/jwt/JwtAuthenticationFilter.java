@@ -30,7 +30,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final String AUTHORIZATION_HEADER = "Authorization";
     private static final String BEARER_PREFIX = "Bearer ";
     private static final List<String> EXCLUDE_URLS = List.of(
-            "/api/v1/auth/**",
+            "/api/v1/auth/exchange",
+            "/api/v1/auth/reissue",
+            "/api/v1/auth/test",
             "/api/v1/stocks/popular-search",
             "/oauth2/**",
             "/login/**"

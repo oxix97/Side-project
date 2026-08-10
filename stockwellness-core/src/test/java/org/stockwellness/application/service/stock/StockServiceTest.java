@@ -25,12 +25,15 @@ import org.stockwellness.domain.stock.Stock;
 import org.stockwellness.domain.stock.StockSector;
 import org.stockwellness.domain.stock.StockStatus;
 import org.stockwellness.domain.stock.event.StockSearchEvent;
+import org.stockwellness.domain.stock.exception.StockPriceException;
 import org.stockwellness.domain.stock.price.StockPrice;
 import org.stockwellness.domain.stock.price.TechnicalIndicators;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
+import static org.stockwellness.global.error.ErrorCode.STOCK_NOT_FOUND;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("StockService 단위 테스트")
@@ -85,7 +88,7 @@ class StockServiceTest {
     }
 
     @Test
-    @DisplayName("종목 상세 조회 시 시세 정보가 없으면 기본값으로 반환한다")
+    @DisplayName("종목 상세 조회 시 시세 정보가 없으면 가격 필드는 null과 안전한 안내 문구로 반환한다")
     void getStockDetail_without_price() {
         // Given
         String ticker = "005930";
@@ -99,9 +102,29 @@ class StockServiceTest {
         StockDetailResult result = stockService.getStockDetail(ticker);
 
         // Then
-        assertThat(result.currentPrice()).isEqualByComparingTo(BigDecimal.ZERO);
-        assertThat(result.fluctuationRate()).isEqualByComparingTo(BigDecimal.ZERO);
-        assertThat(result.aiInsight()).isEqualTo("데이터 집계 중입니다.");
+        assertThat(result.baseDate()).isNull();
+        assertThat(result.currentPrice()).isNull();
+        assertThat(result.priceChange()).isNull();
+        assertThat(result.fluctuationRate()).isNull();
+        assertThat(result.openPrice()).isNull();
+        assertThat(result.highPrice()).isNull();
+        assertThat(result.lowPrice()).isNull();
+        assertThat(result.volume()).isNull();
+        assertThat(result.tradingValue()).isNull();
+        assertThat(result.marketCap()).isNull();
+        assertThat(result.aiInsight()).isEqualTo("시세 데이터가 없어 분석할 수 없습니다.");
+    }
+
+    @Test
+    @DisplayName("존재하지 않는 종목 상세 조회는 S001 표준 예외를 반환한다")
+    void getStockDetail_unknown_ticker_throws_stock_not_found() {
+        String ticker = "999999";
+        given(stockRepository.findByTicker(ticker)).willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> stockService.getStockDetail(ticker))
+                .isInstanceOf(StockPriceException.class)
+                .extracting(exception -> ((StockPriceException) exception).getErrorCode())
+                .isEqualTo(STOCK_NOT_FOUND);
     }
 
     @Test

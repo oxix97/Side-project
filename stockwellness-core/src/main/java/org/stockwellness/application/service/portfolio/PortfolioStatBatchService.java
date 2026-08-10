@@ -20,13 +20,16 @@ import org.stockwellness.domain.portfolio.PortfolioItem;
 import org.stockwellness.domain.portfolio.PortfolioStats;
 import org.stockwellness.domain.portfolio.RebalancingPeriod;
 import org.stockwellness.domain.portfolio.event.PortfolioAnalysisCompletedEvent;
+import org.stockwellness.domain.portfolio.indicator.BenchmarkCode;
 import org.stockwellness.domain.stock.BenchmarkType;
 import org.stockwellness.global.util.JsonUtil;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -77,7 +80,7 @@ public class PortfolioStatBatchService {
 
         Set<String> allSymbols = portfolios.stream()
                 .flatMap(p -> p.getItems().stream())
-                .filter(item -> item.getAssetType() == AssetType.STOCK)
+                .filter(this::isPositiveStock)
                 .map(PortfolioItem::getSymbol)
                 .collect(Collectors.toSet());
 
@@ -109,8 +112,7 @@ public class PortfolioStatBatchService {
     }
 
     public void updateIndividualPortfolioStats(Portfolio portfolio, SimulationData sharedData, LocalDate baseDate) {
-        Map<String, BigDecimal> weights = portfolio.getItems().stream()
-                .collect(Collectors.toMap(PortfolioItem::getSymbol, PortfolioItem::getTargetWeight));
+        Map<String, BigDecimal> weights = buildBacktestWeights(portfolio);
 
         if (weights.isEmpty()) return;
 
@@ -138,7 +140,13 @@ public class PortfolioStatBatchService {
 
         for (int i = 0; i < symbolList.size(); i += MAX_SYMBOLS_PER_LOAD) {
             List<String> partition = symbolList.subList(i, Math.min(i + MAX_SYMBOLS_PER_LOAD, symbolList.size()));
-            SimulationData partData = simulationDataProvider.loadData(partition, null, start, end);
+            // 배치 통계도 필수 primary 벤치마크를 명시적으로 로드한다.
+            SimulationData partData = simulationDataProvider.loadData(
+                    partition,
+                    List.of(BenchmarkCode.KOSPI.getTicker()),
+                    start,
+                    end
+            );
             allStockPrices.putAll(partData.stockPrices());
             if (benchmarkPrices == null) {
                 benchmarkPrices = partData.benchmarkPrices();
@@ -183,6 +191,49 @@ public class PortfolioStatBatchService {
             if (prices != null) filteredStockPrices.put(s, prices);
         });
         return new SimulationData(filteredStockPrices, sharedData.benchmarkPrices());
+    }
+
+    /**
+     * 백테스트가 지원하는 주식 자산만 추출하고, 현금·0% 항목으로 인해
+     * 투자 비중 합계가 100% 미만이 되는 포트폴리오는 주식 비중을 다시
+     * 100%로 정규화한다. 배치와 사용자 요청의 기본 비중 정책을 동일하게
+     * 유지하기 위한 경계 변환이다.
+     */
+    private Map<String, BigDecimal> buildBacktestWeights(Portfolio portfolio) {
+        Map<String, BigDecimal> stockWeights = portfolio.getItems().stream()
+                .filter(this::isPositiveStock)
+                .collect(Collectors.toMap(
+                        PortfolioItem::getSymbol,
+                        PortfolioItem::getTargetWeight,
+                        BigDecimal::add,
+                        LinkedHashMap::new
+                ));
+
+        BigDecimal total = stockWeights.values().stream()
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (total.compareTo(BigDecimal.ZERO) <= 0) {
+            return stockWeights;
+        }
+        if (total.compareTo(BigDecimal.valueOf(100)) == 0) {
+            return stockWeights;
+        }
+
+        Map<String, BigDecimal> normalized = new LinkedHashMap<>();
+        stockWeights.forEach((symbol, weight) -> normalized.put(
+                symbol,
+                weight.multiply(BigDecimal.valueOf(100))
+                        .divide(total, 8, RoundingMode.HALF_UP)
+        ));
+        return normalized;
+    }
+
+    private boolean isPositiveStock(PortfolioItem item) {
+        return item != null
+                && item.getAssetType() == AssetType.STOCK
+                && item.getSymbol() != null
+                && !item.getSymbol().isBlank()
+                && item.getTargetWeight() != null
+                && item.getTargetWeight().compareTo(BigDecimal.ZERO) > 0;
     }
 
 }

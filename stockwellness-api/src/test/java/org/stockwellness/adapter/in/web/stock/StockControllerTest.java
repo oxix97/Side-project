@@ -19,6 +19,8 @@ import org.stockwellness.application.port.in.stock.StockUseCase;
 import org.stockwellness.application.port.in.stock.result.*;
 import org.stockwellness.domain.stock.MarketType;
 import org.stockwellness.domain.stock.StockStatus;
+import org.stockwellness.domain.stock.exception.StockPriceException;
+import org.stockwellness.global.error.ErrorCode;
 import org.stockwellness.support.RestDocsSupport;
 import static com.epages.restdocs.apispec.MockMvcRestDocumentationWrapper.document;
 import static com.epages.restdocs.apispec.ResourceDocumentation.resource;
@@ -316,13 +318,14 @@ class StockControllerTest extends RestDocsSupport {
                 BigDecimal.valueOf(98.5),  // ma60
                 BigDecimal.valueOf(95.0)   // ma120
         );
-        ChartDataResponse response = new ChartDataResponse("AAPL", "애플", "S&P 500", List.of(price), List.of());
+        ChartDataResponse response = new ChartDataResponse("AAPL", "USD", "애플", "S&P 500", List.of(price), List.of());
         given(stockPriceUseCase.loadChartData(any())).willReturn(response);
 
         // when & then
         List<FieldDescriptor> responseFields = new ArrayList<>(commonResponseFields());
         responseFields.addAll(List.of(
                 fieldWithPath("data.ticker").description("티커"),
+                fieldWithPath("data.currency").description("통화 코드 (KRW, USD)"),
                 fieldWithPath("data.stockName").description("종목명"),
                 fieldWithPath("data.benchmarkName").description("벤치마크 이름 (ex: KOSPI, S&P 500)"),
                 fieldWithPath("data.prices[].date").description("날짜"),
@@ -346,6 +349,7 @@ class StockControllerTest extends RestDocsSupport {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.ticker").value("AAPL"))
+                .andExpect(jsonPath("$.data.currency").value("USD"))
                 .andExpect(jsonPath("$.data.stockName").value("애플"))
                 .andExpect(jsonPath("$.data.benchmarkName").value("S&P 500"))
                 .andExpect(jsonPath("$.data.prices[0].transactionAmt").value(100000))
@@ -390,16 +394,16 @@ class StockControllerTest extends RestDocsSupport {
                 fieldWithPath("data.sectorName").description("섹터명"),
                 fieldWithPath("data.marketType").description("마켓 타입"),
                 fieldWithPath("data.totalShares").description("상장 주식 수"),
-                fieldWithPath("data.baseDate").description("기준 날짜"),
-                fieldWithPath("data.currentPrice").description("현재가"),
-                fieldWithPath("data.priceChange").description("대비"),
-                fieldWithPath("data.fluctuationRate").description("등락률 (%)"),
-                fieldWithPath("data.openPrice").description("시가"),
-                fieldWithPath("data.highPrice").description("고가"),
-                fieldWithPath("data.lowPrice").description("저가"),
-                fieldWithPath("data.volume").description("거래량"),
-                fieldWithPath("data.tradingValue").description("거래대금"),
-                fieldWithPath("data.marketCap").description("시가총액"),
+                fieldWithPath("data.baseDate").description("기준 날짜 (시세 누락 시 null)").optional(),
+                fieldWithPath("data.currentPrice").description("현재가 (시세 누락 시 null)").optional(),
+                fieldWithPath("data.priceChange").description("대비 (시세 누락 시 null)").optional(),
+                fieldWithPath("data.fluctuationRate").description("등락률 (%) (시세 누락 시 null)").optional(),
+                fieldWithPath("data.openPrice").description("시가 (시세 누락 시 null)").optional(),
+                fieldWithPath("data.highPrice").description("고가 (시세 누락 시 null)").optional(),
+                fieldWithPath("data.lowPrice").description("저가 (시세 누락 시 null)").optional(),
+                fieldWithPath("data.volume").description("거래량 (시세 누락 시 null)").optional(),
+                fieldWithPath("data.tradingValue").description("거래대금 (시세 누락 시 null)").optional(),
+                fieldWithPath("data.marketCap").description("시가총액 (시세 누락 시 null)").optional(),
                 fieldWithPath("data.rsi14").description("RSI(14) 지표").optional(),
                 fieldWithPath("data.ma20").description("20일 이동평균선").optional(),
                 fieldWithPath("data.aiInsight").description("AI 기술적 인사이트"),
@@ -423,16 +427,38 @@ class StockControllerTest extends RestDocsSupport {
     }
 
     @Test
+    @DisplayName("존재하지 않는 종목 상세 정보 조회는 S001 표준 404를 반환한다")
+    void getStockDetail_unknownTicker() throws Exception {
+        given(stockUseCase.getStockDetail(eq("999999")))
+                .willThrow(new StockPriceException(ErrorCode.STOCK_NOT_FOUND));
+
+        mockMvc.perform(get("/api/v1/stocks/{ticker}", "999999"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.status").value(404))
+                .andExpect(jsonPath("$.code").value("S001"))
+                .andDo(document("stock-get-detail-not-found",
+                        resource(ResourceSnippetParameters.builder()
+                                .tag("Stock Discovery")
+                                .summary("종목 상세 정보 조회")
+                                .pathParameters(parameterWithName("ticker").description("티커"))
+                                .responseFields(commonResponseFieldsWithNoData())
+                                .build())
+                ));
+    }
+
+    @Test
     @DisplayName("수익률 조회 API")
     void getReturns() throws Exception {
         // given
-        ReturnRateResponse response = new ReturnRateResponse("AAPL", "1Y", BigDecimal.valueOf(15.5), BigDecimal.valueOf(10.2));
+        ReturnRateResponse response = new ReturnRateResponse("AAPL", "USD", "1Y", BigDecimal.valueOf(15.5), BigDecimal.valueOf(10.2));
         given(stockPriceUseCase.calculateReturn(eq("AAPL"), any())).willReturn(response);
 
         // when & then
         List<FieldDescriptor> responseFields = new ArrayList<>(commonResponseFields());
         responseFields.addAll(List.of(
                 fieldWithPath("data.ticker").description("티커"),
+                fieldWithPath("data.currency").description("통화 코드 (KRW, USD)"),
                 fieldWithPath("data.period").description("조회 기간"),
                 fieldWithPath("data.stockReturnRate").description("종목 수익률 (%)"),
                 fieldWithPath("data.benchmarkReturnRate").description("벤치마크 수익률 (%)")
@@ -443,6 +469,7 @@ class StockControllerTest extends RestDocsSupport {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.ticker").value("AAPL"))
+                .andExpect(jsonPath("$.data.currency").value("USD"))
                 .andDo(document("stock-returns",
                         resource(ResourceSnippetParameters.builder()
                                 .tag("Stock Price")

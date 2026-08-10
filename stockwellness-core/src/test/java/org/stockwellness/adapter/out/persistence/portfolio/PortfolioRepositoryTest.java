@@ -6,6 +6,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -34,6 +35,9 @@ class PortfolioRepositoryTest {
 
     @Autowired
     private MemberRepository memberRepository;
+
+    @Autowired
+    private EntityManager entityManager;
 
     private Long memberId;
 
@@ -78,6 +82,31 @@ class PortfolioRepositoryTest {
         assertThat(found.get().getItems()).hasSize(2);
         assertThat(found.get().getItems()).extracting(PortfolioItem::getSymbol)
                 .containsExactlyInAnyOrder("005930", "CASH");
+    }
+
+    @Test
+    @DisplayName("가상 포트폴리오 수량 저장: flush와 clear 이후에도 소수점 여섯 자리를 보존한다")
+    void saveAndFindSimulatedPortfolio_preservesSixDecimalQuantity() {
+        Portfolio portfolio = Portfolio.create(memberId, "가상 포트폴리오", "설명");
+        ReflectionTestUtils.setField(portfolio, "createdAt", LocalDateTime.now());
+        PortfolioItem item = PortfolioItem.createSimulatedStock(
+                "005930",
+                new BigDecimal("116.504854"),
+                new BigDecimal("51500"),
+                "KRW",
+                new BigDecimal("100"),
+                LocalDate.of(2026, 8, 7));
+        ReflectionTestUtils.setField(item, "createdAt", LocalDateTime.now());
+        portfolio.updateItems(List.of(item));
+
+        Portfolio saved = portfolioRepository.save(portfolio);
+        entityManager.flush();
+        entityManager.clear();
+
+        Portfolio reloaded = portfolioRepository.findWithItems(saved.getId(), memberId).orElseThrow();
+        assertThat(reloaded.getItems()).singleElement()
+                .extracting(PortfolioItem::getQuantity)
+                .isEqualTo(new BigDecimal("116.504854"));
     }
 
     @Test

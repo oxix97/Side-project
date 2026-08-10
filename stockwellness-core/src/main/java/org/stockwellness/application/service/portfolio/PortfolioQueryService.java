@@ -1,6 +1,5 @@
 package org.stockwellness.application.service.portfolio;
 
-import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -18,6 +17,7 @@ import org.stockwellness.domain.portfolio.PortfolioItem;
 import org.stockwellness.domain.portfolio.exception.PortfolioAccessDeniedException;
 import org.stockwellness.domain.portfolio.exception.PortfolioNotFoundException;
 import org.stockwellness.domain.stock.Stock;
+import org.stockwellness.domain.stock.price.StockPrice;
 
 @Service
 @RequiredArgsConstructor
@@ -31,12 +31,12 @@ public class PortfolioQueryService implements LoadPortfolioUseCase {
     @Override
     public PortfolioResponse getPortfolio(Long memberId, Long portfolioId) {
         Portfolio portfolio = loadOwnedPortfolio(portfolioId, memberId);
-        Map<String, BigDecimal> latestPrices = getLatestPrices(portfolio);
+        Map<String, List<StockPrice>> priceHistories = getPriceHistories(portfolio);
         Map<String, Stock> stockMap = getStockMap(portfolio.getItems().stream()
                 .map(PortfolioItem::getSymbol)
                 .distinct()
                 .toList());
-        return PortfolioResponse.from(portfolio, latestPrices, stockMap);
+        return PortfolioResponse.fromPriceHistories(portfolio, priceHistories, stockMap);
     }
 
     @Override
@@ -50,30 +50,31 @@ public class PortfolioQueryService implements LoadPortfolioUseCase {
                 .distinct()
                 .toList();
         
-        Map<String, BigDecimal> latestPriceMap = stockPricePort.findAllLatestByTickers(allTickers);
+        Map<String, List<StockPrice>> priceHistories = stockPricePort.loadRecentHistoriesBatch(allTickers, 1);
         Map<String, Stock> stockMap = getStockMap(allTickers);
 
         return portfolios.stream()
                 .map(p -> {
                     // 각 포트폴리오에 필요한 티커들만 추출하여 맵 생성
-                    Map<String, BigDecimal> latestPrices = p.getItems().stream()
+                    Map<String, List<StockPrice>> latestPrices = p.getItems().stream()
                             .map(PortfolioItem::getSymbol)
                             .distinct()
                             .collect(Collectors.toMap(
                                     symbol -> symbol,
-                                    symbol -> latestPriceMap.getOrDefault(symbol, BigDecimal.ZERO)
+                                    symbol -> priceHistories == null ? List.of() : priceHistories.getOrDefault(symbol, List.of())
                             ));
-                    return PortfolioResponse.from(p, latestPrices, stockMap);
+                    return PortfolioResponse.fromPriceHistories(p, latestPrices, stockMap);
                 })
                 .toList();
     }
 
-    private Map<String, BigDecimal> getLatestPrices(Portfolio portfolio) {
+    private Map<String, List<StockPrice>> getPriceHistories(Portfolio portfolio) {
         List<String> tickers = portfolio.getItems().stream()
                 .map(PortfolioItem::getSymbol)
                 .distinct()
                 .toList();
-        return stockPricePort.findAllLatestByTickers(tickers);
+        Map<String, List<StockPrice>> histories = stockPricePort.loadRecentHistoriesBatch(tickers, 1);
+        return histories == null ? Map.of() : histories;
     }
 
     private Map<String, Stock> getStockMap(List<String> tickers) {

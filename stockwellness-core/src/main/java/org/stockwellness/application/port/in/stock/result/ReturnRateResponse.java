@@ -7,6 +7,7 @@ import java.math.BigDecimal;
  */
 public record ReturnRateResponse(
         String ticker,
+        String currency,
         String period,
         BigDecimal stockReturnRate,
         BigDecimal benchmarkReturnRate

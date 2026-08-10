@@ -7,8 +7,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.stockwellness.adapter.in.web.portfolio.dto.CreateSimulatedPortfolioRequest;
+import org.stockwellness.adapter.in.web.portfolio.dto.CreateSimulatedPortfolioResponse;
 import org.stockwellness.adapter.in.web.portfolio.dto.DiagnosisResponse;
 import org.stockwellness.application.port.in.portfolio.command.CreatePortfolioCommand;
+import org.stockwellness.application.port.in.portfolio.command.CreateSimulatedPortfolioCommand;
 import org.stockwellness.application.port.in.portfolio.command.UpdatePortfolioCommand;
 import org.stockwellness.application.port.in.portfolio.dto.PortfolioCreateRequest;
 import org.stockwellness.application.port.in.portfolio.dto.PortfolioResponse;
@@ -66,6 +69,25 @@ public class PortfolioController {
         Long portfolioId = portfolioFacade.createPortfolio(command);
 
         return ApiResponse.success(SuccessCode.CREATED, portfolioId);
+    }
+
+    @PostMapping("/simulated")
+    public ApiResponse<CreateSimulatedPortfolioResponse> createSimulatedPortfolio(
+            @AuthenticationPrincipal MemberPrincipal memberPrincipal,
+            @RequestBody @Valid CreateSimulatedPortfolioRequest request
+    ) {
+        CreateSimulatedPortfolioCommand command = new CreateSimulatedPortfolioCommand(
+                memberPrincipal.id(),
+                request.name(),
+                request.description(),
+                request.totalAmount(),
+                request.items().stream()
+                        .map(item -> new CreateSimulatedPortfolioCommand.ItemCommand(item.symbol(), item.targetWeight()))
+                        .toList());
+
+        return ApiResponse.success(
+                SuccessCode.CREATED,
+                CreateSimulatedPortfolioResponse.from(portfolioFacade.createSimulatedPortfolio(command)));
     }
 
     /**
