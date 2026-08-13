@@ -92,5 +92,13 @@ class PortfolioTest {
             assertThatThrownBy(() -> PortfolioItem.createStock("AAPL", BigDecimal.ONE, BigDecimal.valueOf(-100), "KRW"))
                     .isInstanceOf(InvalidPortfolioException.class);
         }
+
+        @Test
+        @DisplayName("엣지 케이스: 저장 정밀도를 넘는 목표 비중은 생성 시점에 예외가 발생한다")
+        void fail_item_target_weight_more_than_four_decimal_places() {
+            assertThatThrownBy(() -> PortfolioItem.createStock(
+                    "AAPL", BigDecimal.ONE, BigDecimal.valueOf(100), "KRW", new BigDecimal("99.99999"), LocalDate.now()))
+                    .isInstanceOf(InvalidPortfolioException.class);
+        }
     }
 }

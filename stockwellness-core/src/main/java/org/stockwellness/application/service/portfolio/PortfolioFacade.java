@@ -15,6 +15,7 @@ import org.stockwellness.application.port.in.portfolio.ManagePortfolioUseCase;
 import org.stockwellness.application.port.in.portfolio.PortfolioAnalysisUseCase;
 import org.stockwellness.application.port.in.portfolio.command.BacktestPortfolioCommand;
 import org.stockwellness.application.port.in.portfolio.command.CreatePortfolioCommand;
+import org.stockwellness.application.port.in.portfolio.command.CreateSimulatedPortfolioCommand;
 import org.stockwellness.application.port.in.portfolio.command.UpdatePortfolioCommand;
 import org.stockwellness.application.port.in.portfolio.dto.PortfolioResponse;
 import org.stockwellness.application.port.in.portfolio.result.*;
@@ -47,6 +48,10 @@ public class PortfolioFacade {
      */
     public Long createPortfolio(CreatePortfolioCommand command) {
         return managePortfolioUseCase.createPortfolio(command);
+    }
+
+    public CreateSimulatedPortfolioResult createSimulatedPortfolio(CreateSimulatedPortfolioCommand command) {
+        return managePortfolioUseCase.createSimulatedPortfolio(command);
     }
 
     /**

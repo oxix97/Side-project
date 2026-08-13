@@ -2,6 +2,7 @@ package org.stockwellness.application.service.portfolio;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -35,10 +36,13 @@ import org.stockwellness.domain.portfolio.Portfolio;
 import org.stockwellness.domain.portfolio.PortfolioItem;
 import org.stockwellness.domain.portfolio.PortfolioStats;
 import org.stockwellness.global.util.JsonUtil;
+import org.stockwellness.global.error.ErrorCode;
+import org.stockwellness.global.error.exception.GlobalException;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 @DataJpaTest
@@ -135,6 +139,7 @@ class PortfolioStatBatchServiceTest {
 
             // then
             assertStats(portfolioId, "15.5", "1.2", "0.9");
+            verify(simulationDataProvider).loadData(anyList(), argThat(tickers -> tickers != null && tickers.contains("0001")), any(), any());
         }
 
         @Test
@@ -166,6 +171,70 @@ class PortfolioStatBatchServiceTest {
                 assertThat(portfolioStatsRepository.findByPortfolioId(id1)).isEmpty();
                 assertThat(portfolioStatsRepository.findByPortfolioId(id2)).isPresent();
             });
+        }
+
+        @Test
+        @DisplayName("필수 벤치마크 누락: 기존 통계를 0 또는 빈 값으로 덮어쓰지 않는다")
+        void missingBenchmarkPreservesExistingStats() {
+            Long portfolioId = createTestPortfolio("missing-benchmark@test.com", "기존 통계", "005930");
+            Portfolio portfolio = loadPortfolioWithItems(portfolioId);
+            transactionTemplate.executeWithoutResult(status -> portfolioStatsRepository.save(
+                    PortfolioStats.create(
+                            portfolio,
+                            LocalDate.now().minusDays(1),
+                            BigDecimal.valueOf(9.9),
+                            BigDecimal.valueOf(2.2),
+                            BigDecimal.valueOf(1.1),
+                            BigDecimal.valueOf(8.8),
+                            BigDecimal.valueOf(7.7)
+                    )
+            ));
+
+            given(portfolioPort.loadAllWithItems(anyList())).willReturn(List.of(portfolio));
+            given(simulationDataProvider.loadData(anyList(), anyList(), any(), any()))
+                    .willReturn(new SimulationData(Map.of("005930", List.of()), Map.of()));
+            given(backtestEngine.runLumpSum(any(), any(), any(), any(), any(), any(), anyBoolean()))
+                    .willThrow(new GlobalException(ErrorCode.PRICE_DATA_NOT_FOUND));
+
+            portfolioStatBatchService.updatePortfolioStatsBatch(List.of(portfolioId));
+
+            transactionTemplate.executeWithoutResult(status -> {
+                PortfolioStats stats = portfolioStatsRepository.findByPortfolioId(portfolioId).orElseThrow();
+                assertThat(stats.getMdd()).isEqualByComparingTo("9.9");
+                assertThat(stats.getSharpeRatio()).isEqualByComparingTo("2.2");
+                assertThat(stats.getBeta()).isEqualByComparingTo("1.1");
+            });
+            verify(outboxPort, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("현금 및 0% 자산은 배치 백테스트에서 제외하고 주식 비중을 100%로 정규화한다")
+        void filtersCashAndZeroWeightAssets() {
+            Long portfolioId = createPortfolioWithCashAndZeroWeightStock();
+            Portfolio portfolio = loadPortfolioWithItems(portfolioId);
+
+            given(portfolioPort.loadAllWithItems(anyList())).willReturn(List.of(portfolio));
+            setupMocks();
+
+            portfolioStatBatchService.updatePortfolioStatsBatch(List.of(portfolioId));
+
+            verify(simulationDataProvider).loadData(
+                    argThat(symbols -> symbols.size() == 1 && symbols.contains("005930")),
+                    argThat(tickers -> tickers != null && tickers.contains("0001")),
+                    any(),
+                    any()
+            );
+            verify(backtestEngine).runLumpSum(
+                    any(),
+                    argThat(weights -> weights.size() == 1
+                            && weights.containsKey("005930")
+                            && weights.get("005930").compareTo(BigDecimal.valueOf(100)) == 0),
+                    any(),
+                    any(),
+                    any(),
+                    any(),
+                    anyBoolean()
+            );
         }
 
         @Test
@@ -201,6 +270,27 @@ class PortfolioStatBatchServiceTest {
                 PortfolioItem item = PortfolioItem.createStock(ticker, BigDecimal.TEN, BigDecimal.valueOf(50000), "KRW", BigDecimal.valueOf(100), LocalDate.now());
                 portfolio.updateItems(List.of(item));
                 
+                portfolioRepository.save(portfolio);
+                return portfolio.getId();
+            });
+        }
+
+        private Long createPortfolioWithCashAndZeroWeightStock() {
+            return transactionTemplate.execute(status -> {
+                Member member = Member.register("cash-mix@test.com", "현금 혼합", LoginType.GOOGLE);
+                memberRepository.save(member);
+
+                Portfolio portfolio = Portfolio.create(member.getId(), "현금 혼합 포트폴리오", "");
+                PortfolioItem stock = PortfolioItem.createStock(
+                        "005930", BigDecimal.TEN, BigDecimal.valueOf(50000), "KRW",
+                        BigDecimal.valueOf(70), LocalDate.now());
+                PortfolioItem zeroWeightStock = PortfolioItem.createStock(
+                        "000660", BigDecimal.TEN, BigDecimal.valueOf(50000), "KRW",
+                        BigDecimal.ZERO, LocalDate.now());
+                PortfolioItem cash = PortfolioItem.createCash(
+                        BigDecimal.valueOf(300000), "KRW", BigDecimal.valueOf(30), LocalDate.now());
+                portfolio.updateItems(new ArrayList<>(List.of(stock, zeroWeightStock, cash)));
+
                 portfolioRepository.save(portfolio);
                 return portfolio.getId();
             });

@@ -1,7 +1,7 @@
 package org.stockwellness.adapter.in.kafka;
 
 import java.util.List;
-import java.util.concurrent.TimeUnit;
+import java.time.Duration;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,7 +13,6 @@ import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.listener.MessageListenerContainer;
 import org.springframework.kafka.test.EmbeddedKafkaBroker;
 import org.springframework.kafka.test.context.EmbeddedKafka;
-import org.springframework.kafka.test.utils.ContainerTestUtils;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.stockwellness.adapter.out.persistence.portfolio.PortfolioAdapter;
@@ -29,10 +28,16 @@ import static org.stockwellness.domain.common.cache.CacheType.SECTOR_RANKING;
 import static org.stockwellness.domain.common.cache.CacheType.SECTOR_SUPPLY;
 import static org.stockwellness.domain.common.cache.CacheType.STOCK_SUPPLY_RANKING;
 
-@SpringBootTest
+@SpringBootTest(properties = "spring.kafka.listener.auto-startup=true")
 @ActiveProfiles("test")
-@EmbeddedKafka(partitions = 1, topics = {STOCK_PRICE_UPDATED_TOPIC})
+@EmbeddedKafka(
+        partitions = 1,
+        topics = {STOCK_PRICE_UPDATED_TOPIC},
+        bootstrapServersProperty = "spring.kafka.bootstrap-servers"
+)
 class StockPriceUpdateConsumerTest {
+
+    private static final Duration ASSIGNMENT_TIMEOUT = Duration.ofSeconds(10);
 
     @Autowired
     private KafkaTemplate<String, Object> kafkaTemplate;
@@ -60,23 +65,27 @@ class StockPriceUpdateConsumerTest {
         when(cacheManager.getCache(anyString())).thenReturn(mockCache);
         when(portfolioAdapter.findPortfolioIdsBySymbols(symbols)).thenReturn(portfolioIds);
 
-        // 컨슈머가 파티션을 할당받을 때까지 대기
-        for (MessageListenerContainer messageListenerContainer : kafkaListenerEndpointRegistry.getListenerContainers()) {
-            if (messageListenerContainer.getContainerProperties().getTopics() != null) {
-                List<String> topics = List.of(messageListenerContainer.getContainerProperties().getTopics());
-                if (topics.contains(STOCK_PRICE_UPDATED_TOPIC)) {
-                    ContainerTestUtils.waitForAssignment(messageListenerContainer, embeddedKafkaBroker.getPartitionsPerTopic());
-                }
-            }
-        }
+        MessageListenerContainer stockPriceListener = kafkaListenerEndpointRegistry.getListenerContainers().stream()
+                .filter(messageListenerContainer -> {
+                    String[] topics = messageListenerContainer.getContainerProperties().getTopics();
+                    return topics != null && List.of(topics).contains(STOCK_PRICE_UPDATED_TOPIC);
+                })
+                .findFirst()
+                .orElseThrow();
+
+        await()
+                .atMost(ASSIGNMENT_TIMEOUT)
+                .pollInterval(Duration.ofMillis(100))
+                .until(() -> stockPriceListener.getAssignedPartitions().size()
+                        == embeddedKafkaBroker.getPartitionsPerTopic());
 
         // when
         kafkaTemplate.send(STOCK_PRICE_UPDATED_TOPIC, event);
 
         // then
         await()
-            .atMost(10, TimeUnit.SECONDS)
-            .pollInterval(200, TimeUnit.MILLISECONDS)
+            .atMost(ASSIGNMENT_TIMEOUT)
+            .pollInterval(Duration.ofMillis(200))
             .untilAsserted(() -> {
                 verify(cacheManager).getCache(SECTOR_RANKING.getCacheName());
                 verify(cacheManager).getCache(SECTOR_SUPPLY.getCacheName());

@@ -7,7 +7,6 @@ import java.util.Map;
 
 import org.stockwellness.application.service.portfolio.internal.BacktestResult;
 import org.stockwellness.domain.portfolio.vo.ReturnSeries;
-import org.stockwellness.domain.stock.BenchmarkType;
 
 /**
  * 분리된 지표 계산기들을 사용하여 최종 BacktestResult를 조합하는 애그리게이터
@@ -41,7 +40,7 @@ public class BacktestAggregator {
             BigDecimal relativeMdd = risk.mdd().subtract(benchmarkMdd);
 
             comparisons.add(new BacktestResult.IndexComparison(
-                BenchmarkType.fromTicker(ticker).getDescription(),
+                benchmarkDisplayName(ticker),
                 ticker,
                 metrics.indexReturn(),
                 metrics.alpha(),
@@ -51,10 +50,14 @@ public class BacktestAggregator {
             ));
         }
 
-        // Primary Alpha/Beta/RelativeMDD (첫 번째 벤치마크 기준)
-        BigDecimal primaryAlpha = comparisons.isEmpty() ? BigDecimal.ZERO : comparisons.getFirst().alpha();
-        BigDecimal primaryBeta = comparisons.isEmpty() ? BigDecimal.ONE : comparisons.getFirst().beta();
-        BigDecimal primaryRelativeMdd = comparisons.isEmpty() ? BigDecimal.ZERO : comparisons.getFirst().relativeMdd();
+        // 스칼라 지표는 요청된 primary benchmark와 같은 comparison을 사용한다.
+        BacktestResult.IndexComparison primary = comparisons.stream()
+                .filter(comparison -> comparison.ticker().equalsIgnoreCase(context.primaryBenchmarkTicker()))
+                .findFirst()
+                .orElse(comparisons.isEmpty() ? null : comparisons.getFirst());
+        BigDecimal primaryAlpha = primary == null ? BigDecimal.ZERO : primary.alpha();
+        BigDecimal primaryBeta = primary == null ? BigDecimal.ONE : primary.beta();
+        BigDecimal primaryRelativeMdd = primary == null ? BigDecimal.ZERO : primary.relativeMdd();
 
         return new BacktestResult(
                 dailyResults,
@@ -72,5 +75,13 @@ public class BacktestAggregator {
                 comparisons,
                 aiComment
         );
+    }
+
+    private String benchmarkDisplayName(String ticker) {
+        try {
+            return BenchmarkCode.fromCode(ticker).getDisplayName();
+        } catch (IllegalArgumentException ignored) {
+            return ticker;
+        }
     }
 }

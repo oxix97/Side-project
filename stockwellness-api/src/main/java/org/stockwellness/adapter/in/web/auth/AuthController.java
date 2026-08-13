@@ -9,8 +9,7 @@ import org.springframework.web.bind.annotation.*;
 import org.stockwellness.adapter.in.web.auth.dto.LoginResponse;
 import org.stockwellness.adapter.in.web.auth.dto.ReissueResponse;
 import org.stockwellness.application.port.in.auth.AuthUseCase;
-import org.stockwellness.application.port.in.auth.command.LoginCommand;
-import org.stockwellness.application.port.in.auth.dto.LoginRequest;
+import org.stockwellness.application.port.in.auth.dto.ExchangeRequest;
 import org.stockwellness.application.port.in.auth.dto.ReissueRequest;
 import org.stockwellness.application.port.in.auth.result.LoginResult;
 import org.stockwellness.application.port.in.auth.result.ReissueResult;
@@ -24,20 +23,9 @@ public class AuthController {
 
     private final AuthUseCase authUseCase;
 
-    @PostMapping("/login")
-    public ApiResponse<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
-        LoginCommand command = new LoginCommand(request.email(), request.nickname(), request.loginType());
-        LoginResult result = authUseCase.login(command);
-
-        LoginResponse response = new LoginResponse(
-            result.accessToken(),
-            result.refreshToken(),
-            result.memberId(),
-            result.email(),
-            result.nickname(),
-            result.joinedDate()
-        );
-        return ApiResponse.success(response);
+    @PostMapping("/exchange")
+    public ApiResponse<LoginResponse> exchange(@Valid @RequestBody ExchangeRequest request) {
+        return ApiResponse.success(toLoginResponse(authUseCase.exchange(request.code())));
     }
 
     @PostMapping("/reissue")
@@ -60,5 +48,16 @@ public class AuthController {
     @GetMapping("/test")
     public ApiResponse<Map<String, String>> test() {
         return ApiResponse.success(Map.of("status", "ok", "service", "stockwellness"));
+    }
+
+    private LoginResponse toLoginResponse(LoginResult result) {
+        return new LoginResponse(
+                result.accessToken(),
+                result.refreshToken(),
+                result.memberId(),
+                result.email(),
+                result.nickname(),
+                result.joinedDate()
+        );
     }
 }

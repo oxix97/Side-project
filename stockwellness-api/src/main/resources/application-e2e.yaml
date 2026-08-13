@@ -1,0 +1,10 @@
+spring:
+  config:
+    activate:
+      on-profile: e2e
+
+app:
+  test-support:
+    attestation:
+      allowed-member-id: ${E2E_DEDICATED_MEMBER_ID:0}
+      database-id: ${E2E_ISOLATED_DATABASE_ID:}

@@ -2,6 +2,7 @@ package org.stockwellness.application.service.portfolio.internal;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -9,7 +10,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.stockwellness.application.port.in.stock.result.StockPriceResult;
 import org.stockwellness.domain.portfolio.RebalancingPeriod;
+import org.stockwellness.global.error.ErrorCode;
+import org.stockwellness.global.error.exception.GlobalException;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DisplayName("BacktestEngine 단위 테스트")
 class BacktestEngineTest {
@@ -74,8 +78,9 @@ class BacktestEngineTest {
         assertThat(result.dailyResults().get(0).totalValue()).isEqualByComparingTo(BigDecimal.valueOf(1000));
         // Month 2: 10 shares worth 2000 + 1000 new investment (5 shares) -> total 15 shares, value 3000
         assertThat(result.dailyResults().get(1).totalValue()).isEqualByComparingTo(BigDecimal.valueOf(3000));
-        // Total invested: 2000. Total value: 3000. Return: 1000 / 2000 * 100 = 50%
-        assertThat(result.dailyResults().get(1).returnRate()).isEqualByComparingTo(BigDecimal.valueOf(50));
+        // 외부 현금흐름을 제거한 일간 TWR은 가격 상승분인 100%만 반영한다.
+        assertThat(result.dailyResults().get(1).returnRate()).isEqualByComparingTo(BigDecimal.valueOf(100));
+        assertThat(result.timeWeightedReturnRate()).isEqualByComparingTo(BigDecimal.valueOf(100));
     }
 
     @Test
@@ -125,5 +130,122 @@ class BacktestEngineTest {
         // dailyValue = 3000
         assertThat(result.dailyResults().get(1).totalValue()).isEqualByComparingTo(BigDecimal.valueOf(3000));
         // We can't easily check totalShares here as it's private, but we verified the logic.
+    }
+
+    @Test
+    @DisplayName("평탄한 가격의 DCA는 두 번째 납입일에도 외부 현금흐름을 제거한 TWR을 계산한다")
+    void dca_flat_price_uses_time_weighted_return() {
+        LocalDate month1 = LocalDate.of(2024, 1, 2);
+        LocalDate month2 = LocalDate.of(2024, 2, 1);
+        StockPriceResult p1 = price(month1, "100");
+        StockPriceResult p2 = price(month2, "100");
+
+        BacktestResult result = backtestEngine.runDCA(
+                new SimulationData(Map.of("AAPL", List.of(p1, p2)), Map.of("KOSPI", List.of(p1, p2))),
+                Map.of("AAPL", BigDecimal.valueOf(100)), BigDecimal.valueOf(1000),
+                RebalancingPeriod.NONE, "KOSPI", BigDecimal.ZERO, false);
+
+        assertThat(result.dailyResults().get(1).returnRate()).isZero();
+        assertThat(result.mdd()).isZero();
+        assertThat(result.xirr()).isZero();
+        assertThat(result.cagr()).isNull();
+        assertThat(result.timeWeightedReturnRate()).isZero();
+    }
+
+    @Test
+    @DisplayName("날짜 축은 종목과 벤치마크 시세 날짜의 합집합을 사용한다")
+    void date_axis_uses_stock_and_benchmark_union() {
+        LocalDate stockDate = LocalDate.of(2024, 1, 2);
+        LocalDate benchmarkDate1 = LocalDate.of(2024, 1, 2);
+        LocalDate benchmarkDate2 = LocalDate.of(2024, 1, 3);
+
+        BacktestResult result = backtestEngine.runLumpSum(
+                new SimulationData(
+                        Map.of("AAPL", List.of(price(stockDate, "100"))),
+                        Map.of("KOSPI", List.of(price(benchmarkDate1, "100"), price(benchmarkDate2, "101")))),
+                Map.of("AAPL", BigDecimal.valueOf(100)), BigDecimal.valueOf(1000),
+                RebalancingPeriod.NONE, "KOSPI", BigDecimal.ZERO, false);
+
+        assertThat(result.dailyResults()).extracting(BacktestResult.DailyBacktestResult::date)
+                .containsExactly(stockDate, benchmarkDate2);
+    }
+
+    @Test
+    @DisplayName("벤치마크가 자산보다 먼저 시작해도 공통 시작일 이후 백테스트를 수행한다")
+    void benchmark_starting_before_asset_does_not_fail() {
+        LocalDate benchmarkOnlyDate = LocalDate.of(2024, 1, 2);
+        LocalDate stockStart = LocalDate.of(2024, 1, 3);
+        LocalDate stockEnd = LocalDate.of(2024, 1, 4);
+
+        BacktestResult result = backtestEngine.runLumpSum(
+                new SimulationData(
+                        Map.of("AAPL", List.of(price(stockStart, "100"), price(stockEnd, "110"))),
+                        Map.of("KOSPI", List.of(
+                                price(benchmarkOnlyDate, "100"),
+                                price(stockStart, "101"),
+                                price(stockEnd, "102")))),
+                Map.of("AAPL", BigDecimal.valueOf(100)), BigDecimal.valueOf(1000),
+                RebalancingPeriod.NONE, "KOSPI", BigDecimal.ZERO, false);
+
+        assertThat(result.dailyResults()).extracting(BacktestResult.DailyBacktestResult::date)
+                .containsExactly(stockStart, stockEnd);
+        assertThat(result.dailyResults().getFirst().totalValue()).isPositive();
+    }
+
+    @Test
+    @DisplayName("필수 primary 벤치마크가 없으면 S002로 실패한다")
+    void missing_primary_benchmark_fails_with_s002() {
+        LocalDate day = LocalDate.of(2024, 1, 2);
+
+        assertThatThrownBy(() -> backtestEngine.runLumpSum(
+                new SimulationData(Map.of("AAPL", List.of(price(day, "100"))), Map.of()),
+                Map.of("AAPL", BigDecimal.valueOf(100)), BigDecimal.valueOf(1000),
+                RebalancingPeriod.NONE, "KOSPI", BigDecimal.ZERO, false))
+                .isInstanceOf(GlobalException.class)
+                .satisfies(error -> assertThat(((GlobalException) error).getErrorCode()).isEqualTo(ErrorCode.PRICE_DATA_NOT_FOUND));
+    }
+
+    @Test
+    @DisplayName("SP500 primary는 SPX 데이터를 사용하고 scalar 지표가 해당 comparison과 일치한다")
+    void sp500_primary_uses_spx_and_preserves_benchmark_order() {
+        LocalDate day1 = LocalDate.of(2024, 1, 2);
+        LocalDate day2 = LocalDate.of(2024, 1, 3);
+        StockPriceResult stock1 = price(day1, "100");
+        StockPriceResult stock2 = price(day2, "110");
+        LinkedHashMap<String, List<StockPriceResult>> benchmarks = new LinkedHashMap<>();
+        benchmarks.put("0001", List.of(price(day1, "100"), price(day2, "105")));
+        benchmarks.put("SPX", List.of(price(day1, "100"), price(day2, "120")));
+        benchmarks.put("1001", List.of(price(day1, "100"), price(day2, "101")));
+
+        BacktestResult result = backtestEngine.runLumpSum(
+                new SimulationData(Map.of("AAPL", List.of(stock1, stock2)), benchmarks),
+                Map.of("AAPL", BigDecimal.valueOf(100)), BigDecimal.valueOf(1000),
+                RebalancingPeriod.NONE, "SP500", BigDecimal.ZERO, false);
+
+        assertThat(result.comparisons()).extracting(BacktestResult.IndexComparison::ticker)
+                .containsExactly("0001", "SPX", "1001");
+        BacktestResult.IndexComparison primary = result.comparisons().get(1);
+        assertThat(result.alpha()).isEqualByComparingTo(primary.alpha());
+        assertThat(result.beta()).isEqualByComparingTo(primary.beta());
+        assertThat(result.relativeMdd()).isEqualByComparingTo(primary.relativeMdd());
+    }
+
+    @Test
+    @DisplayName("0 이하 종가는 S002로 실패하고 0 대체값을 사용하지 않는다")
+    void non_positive_price_fails_with_s002() {
+        LocalDate day = LocalDate.of(2024, 1, 2);
+        StockPriceResult invalid = price(day, "0");
+        assertThatThrownBy(() -> backtestEngine.runLumpSum(
+                new SimulationData(Map.of("AAPL", List.of(invalid)), Map.of("KOSPI", List.of(price(day, "100")))),
+                Map.of("AAPL", BigDecimal.valueOf(100)), BigDecimal.valueOf(1000),
+                RebalancingPeriod.NONE, "KOSPI", BigDecimal.ZERO, false))
+                .isInstanceOf(GlobalException.class)
+                .satisfies(error -> assertThat(((GlobalException) error).getErrorCode()).isEqualTo(ErrorCode.PRICE_DATA_NOT_FOUND));
+    }
+
+    private static StockPriceResult price(LocalDate date, String close) {
+        BigDecimal value = new BigDecimal(close);
+        return new StockPriceResult(
+                date, value, value, value, value, value, 100L, null, null, null, null, null);
     }
 }

@@ -50,7 +50,7 @@ public class PortfolioItem extends AbstractEntity {
     /**
      * 보유 수량 (현금인 경우 금액)
      */
-    @Column(nullable = false, precision = 19, scale = 4)
+    @Column(nullable = false, precision = 19, scale = 6)
     private BigDecimal quantity;
 
     /**
@@ -111,6 +111,20 @@ public class PortfolioItem extends AbstractEntity {
     }
 
     /**
+     * EOD 종가와 목표 비중으로 생성된 가상 포트폴리오 종목을 생성합니다.
+     */
+    public static PortfolioItem createSimulatedStock(
+            String symbol,
+            BigDecimal quantity,
+            BigDecimal latestEodClose,
+            String currency,
+            BigDecimal targetWeight,
+            LocalDate asOfDate
+    ) {
+        return createStock(symbol, quantity, latestEodClose, currency, targetWeight, asOfDate);
+    }
+
+    /**
      * 현금 자산 항목을 생성합니다. (목표 비중 0%)
      */
     public static PortfolioItem createCash(BigDecimal amount, String currency) {
@@ -162,7 +176,8 @@ public class PortfolioItem extends AbstractEntity {
      * 목표 비중의 유효성을 검사합니다. (0% ~ 100% 사이)
      */
     private static void validateWeight(BigDecimal weight) {
-        if (weight == null || weight.compareTo(BigDecimal.ZERO) < 0 || weight.compareTo(BigDecimal.valueOf(100)) > 0) {
+        if (weight == null || weight.compareTo(BigDecimal.ZERO) < 0 || weight.compareTo(BigDecimal.valueOf(100)) > 0
+                || weight.scale() > 4) {
             throw new InvalidPortfolioException();
         }
     }

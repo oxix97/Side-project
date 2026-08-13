@@ -9,6 +9,7 @@ import java.util.List;
  */
 public record ChartDataResponse(
         String ticker,
+        String currency,
         String stockName,
         String benchmarkName,
         List<ChartPoint> prices,

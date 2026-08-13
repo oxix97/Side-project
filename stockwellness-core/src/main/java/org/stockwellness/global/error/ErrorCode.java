@@ -23,6 +23,7 @@ public enum ErrorCode {
     REFRESH_TOKEN_NOT_FOUND(HttpStatus.UNAUTHORIZED, "A006", "리프레시 토큰을 찾을 수 없습니다."),
     OAUTH2_LOGIN_FAILED(HttpStatus.UNAUTHORIZED, "A007", "소셜 로그인에 실패했습니다."),
     REQUIRE_SIGNUP(HttpStatus.UNAUTHORIZED, "A008", "회원가입이 필요한 기능입니다."),
+    OAUTH_EXCHANGE_CODE_INVALID(HttpStatus.UNAUTHORIZED, "A009", "OAuth 교환 코드가 유효하지 않습니다."),
 
     // 회원 (M)
     MEMBER_NOT_FOUND(NOT_FOUND, "M001", "회원을 찾을 수 없습니다."),
@@ -36,6 +37,7 @@ public enum ErrorCode {
     DUPLICATE_PORTFOLIO_NAME(CONFLICT, "P003", "이미 사용 중인 포트폴리오 이름입니다."),
     PORTFOLIO_NOT_FOUND(NOT_FOUND, "P004", "포트폴리오를 찾을 수 없습니다."),
     PORTFOLIO_ACCESS_DENIED(FORBIDDEN, "P005", "해당 포트폴리오에 대한 접근 권한이 없습니다."),
+    UNSUPPORTED_PORTFOLIO_CURRENCY(BAD_REQUEST, "P006", "원화 종목만 가상 포트폴리오에 담을 수 있습니다."),
 
     // 관심 종목 (W)
     WATCHLIST_GROUP_LIMIT_EXCEEDED(BAD_REQUEST, "W001", "관심 그룹은 최대 10개까지 생성할 수 있습니다."),

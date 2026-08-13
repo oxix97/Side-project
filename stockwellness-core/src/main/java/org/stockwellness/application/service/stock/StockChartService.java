@@ -100,6 +100,7 @@ public class StockChartService implements StockPriceUseCase {
 
         return new ChartDataResponse(
                 query.ticker(),
+                stock.getCurrency().name(),
                 stock.getName(),
                 benchmarkInfo.name(),
                 aggregatedPrices,
@@ -126,7 +127,7 @@ public class StockChartService implements StockPriceUseCase {
         BigDecimal stockReturn = calculateTotalReturn(stockPrices);
         BigDecimal benchmarkReturn = calculateTotalReturn(benchmarkPrices);
 
-        return new ReturnRateResponse(ticker, period.getLabel(), stockReturn, benchmarkReturn);
+        return new ReturnRateResponse(ticker, stock.getCurrency().name(), period.getLabel(), stockReturn, benchmarkReturn);
     }
 
     private Stock findStockOrThrow(String ticker) {

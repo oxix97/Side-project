@@ -2,6 +2,7 @@ package org.stockwellness.application.service.portfolio.internal;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -72,5 +73,40 @@ class SimulationDataProviderTest {
 
         assertThat(data.stockPrices().get("AAPL")).hasSize(1);
         assertThat(data.benchmarkPrices()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("벤치마크 결과는 요청한 비교 순서를 보존한다")
+    void preserves_requested_benchmark_order() {
+        List<String> symbols = List.of("005930");
+        // API는 외부 코드 순서를 검증한 뒤 내부 저장소 코드(SPX, 0001, 1001)로
+        // 변환해 provider에 전달합니다. 이 키들은 HashMap 버킷이 달라 순서 손실을 재현합니다.
+        List<String> benchmarkTickers = List.of("SPX", "0001", "1001");
+        LocalDate end = LocalDate.now();
+        LocalDate start = end.minusYears(2);
+
+        StockPriceResult price = new StockPriceResult(
+                start,
+                BigDecimal.valueOf(100),
+                BigDecimal.valueOf(105),
+                BigDecimal.valueOf(95),
+                BigDecimal.valueOf(102),
+                BigDecimal.valueOf(102),
+                1000L,
+                null,
+                null,
+                null,
+                null,
+                null
+        );
+        given(stockPricePort.loadPricesByTickers(anyList(), any(LocalDate.class), any(LocalDate.class)))
+                .willReturn(Map.of("005930", List.of(price)));
+        given(loadBenchmarkPort.loadBenchmarkPrices(anyString(), any(LocalDate.class), any(LocalDate.class)))
+                .willReturn(List.of(price));
+
+        SimulationData data = simulationDataProvider.loadData(symbols, benchmarkTickers, start, end);
+
+        assertThat(new ArrayList<>(data.benchmarkPrices().keySet()))
+                .containsExactlyElementsOf(benchmarkTickers);
     }
 }

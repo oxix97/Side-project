@@ -20,8 +20,11 @@ import org.stockwellness.application.port.in.stock.result.StockDetailResult;
 import org.stockwellness.application.port.in.stock.result.StockSearchResult;
 import org.stockwellness.application.port.out.stock.StockPricePort;
 import org.stockwellness.domain.stock.event.StockSearchEvent;
+import org.stockwellness.domain.stock.exception.StockPriceException;
 import org.stockwellness.domain.stock.price.StockPrice;
 import org.stockwellness.global.util.DateUtil;
+
+import static org.stockwellness.global.error.ErrorCode.STOCK_NOT_FOUND;
 
 @Slf4j
 @RequiredArgsConstructor
@@ -64,15 +67,39 @@ public class StockService implements StockUseCase {
     @Override
     public StockDetailResult getStockDetail(String ticker) {
         var stock = stockRepository.findByTicker(ticker)
-                .orElseThrow(() -> new IllegalArgumentException("Stock not found: " + ticker));
+                .orElseThrow(() -> new StockPriceException(STOCK_NOT_FOUND));
 
         // 최신 시세 정보 조회
-        LocalDate today = LocalDate.now();
         StockPrice latestPrice = stockPricePort.findLatestByTicker(ticker)
                 .orElse(null);
 
-        BigDecimal closePrice = (latestPrice != null) ? latestPrice.getClosePrice() : BigDecimal.ZERO;
-        BigDecimal prevClose = (latestPrice != null && latestPrice.getPreviousClosePrice() != null) 
+        if (latestPrice == null) {
+            return new StockDetailResult(
+                    stock.getStandardCode(),
+                    stock.getTicker(),
+                    stock.getName(),
+                    stock.getSector().getSectorName(),
+                    stock.getMarketType().name(),
+                    stock.getParValue(), // totalShares 대용
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    "시세 데이터가 없어 분석할 수 없습니다.",
+                    DateUtil.isMarketOpen()
+            );
+        }
+
+        BigDecimal closePrice = latestPrice.getClosePrice();
+        BigDecimal prevClose = latestPrice.getPreviousClosePrice() != null
                 ? latestPrice.getPreviousClosePrice() : closePrice;
         BigDecimal priceChange = closePrice.subtract(prevClose);
         BigDecimal fluctuationRate = prevClose.compareTo(BigDecimal.ZERO) == 0 ? BigDecimal.ZERO :
@@ -85,19 +112,19 @@ public class StockService implements StockUseCase {
                 stock.getSector().getSectorName(),
                 stock.getMarketType().name(),
                 stock.getParValue(), // totalShares 대용
-                (latestPrice != null) ? latestPrice.getId().getBaseDate() : today,
+                latestPrice.getId().getBaseDate(),
                 closePrice,
                 priceChange,
                 fluctuationRate,
-                (latestPrice != null) ? latestPrice.getOpenPrice() : BigDecimal.ZERO,
-                (latestPrice != null) ? latestPrice.getHighPrice() : BigDecimal.ZERO,
-                (latestPrice != null) ? latestPrice.getLowPrice() : BigDecimal.ZERO,
-                (latestPrice != null) ? latestPrice.getVolume() : 0L,
-                (latestPrice != null) ? latestPrice.getTransactionAmt() : BigDecimal.ZERO,
+                latestPrice.getOpenPrice(),
+                latestPrice.getHighPrice(),
+                latestPrice.getLowPrice(),
+                latestPrice.getVolume(),
+                latestPrice.getTransactionAmt(),
                 BigDecimal.ZERO, // marketCap (필요 시 추가 계산)
-                (latestPrice != null && latestPrice.getIndicators() != null) ? latestPrice.getIndicators().getRsi14() : null,
-                (latestPrice != null && latestPrice.getIndicators() != null) ? latestPrice.getIndicators().getMa20() : null,
-                (latestPrice != null && latestPrice.getIndicators() != null) ? latestPrice.getIndicators().getAiInsight() : "데이터 집계 중입니다.",
+                latestPrice.getIndicators() != null ? latestPrice.getIndicators().getRsi14() : null,
+                latestPrice.getIndicators() != null ? latestPrice.getIndicators().getMa20() : null,
+                latestPrice.getIndicators() != null ? latestPrice.getIndicators().getAiInsight() : "데이터 집계 중입니다.",
                 DateUtil.isMarketOpen()
         );
     }

@@ -16,9 +16,13 @@ import org.stockwellness.application.port.in.portfolio.command.BacktestPortfolio
 import org.stockwellness.application.port.in.portfolio.result.*;
 import org.stockwellness.application.service.portfolio.PortfolioFacade;
 import org.stockwellness.application.service.portfolio.internal.BacktestResult;
-import org.stockwellness.domain.stock.BenchmarkType;
+import org.stockwellness.domain.portfolio.BacktestStrategy;
+import org.stockwellness.domain.portfolio.RebalancingPeriod;
+import org.stockwellness.domain.portfolio.indicator.BenchmarkCode;
 import org.stockwellness.domain.stock.price.ChartPeriod;
 import org.stockwellness.global.common.response.ApiResponse;
+import org.stockwellness.global.error.ErrorCode;
+import org.stockwellness.global.error.exception.GlobalException;
 import org.stockwellness.global.logging.LogExecution;
 import org.stockwellness.global.security.MemberPrincipal;
 
@@ -125,15 +129,16 @@ public class PortfolioAnalysisController {
             @PathVariable Long portfolioId,
             @RequestBody @Valid BacktestRequest request) {
 
+        validateBacktestStrategy(request.strategy());
         BacktestPortfolioCommand command = new BacktestPortfolioCommand(
                 memberPrincipal.id(),
                 portfolioId,
                 request.strategy(),
                 request.amount(),
-                resolveBenchmarkTickers(request.benchmarkTicker()),
+                resolveBenchmarkTickers(request.primaryBenchmark()),
                 ChartPeriod.fromLabel(request.period() != null ? request.period() : "1Y"),
                 request.dividendReinvested() != null ? request.dividendReinvested() : true,
-                request.rebalancingPeriod(),
+                request.rebalancingPeriod() != null ? request.rebalancingPeriod() : RebalancingPeriod.NONE,
                 request.weights()
         );
 
@@ -142,15 +147,32 @@ public class PortfolioAnalysisController {
         return ApiResponse.success(BacktestResponse.from(result, primaryTicker));
     }
 
+    private void validateBacktestStrategy(String strategy) {
+        if (strategy == null || strategy.isBlank()) {
+            throw new GlobalException(ErrorCode.INVALID_INPUT_VALUE);
+        }
+        try {
+            BacktestStrategy.valueOf(strategy.trim().toUpperCase());
+        } catch (IllegalArgumentException exception) {
+            throw new GlobalException(ErrorCode.INVALID_INPUT_VALUE);
+        }
+    }
+
     private List<String> resolveBenchmarkTickers(String benchmarkTicker) {
-        List<String> defaultTickers = BenchmarkType.defaultSimulationBenchmarkTickers();
-        if (benchmarkTicker == null || benchmarkTicker.isBlank()) {
-            return defaultTickers;
+        BenchmarkCode primary;
+        try {
+            primary = BenchmarkCode.fromCode(
+                    benchmarkTicker == null || benchmarkTicker.isBlank() ? "KOSPI" : benchmarkTicker
+            );
+        } catch (IllegalArgumentException exception) {
+            throw new GlobalException(ErrorCode.INVALID_INPUT_VALUE);
         }
 
         LinkedHashSet<String> tickers = new LinkedHashSet<>();
-        tickers.add(benchmarkTicker);
-        tickers.addAll(defaultTickers);
+        tickers.add(primary.getTicker());
+        for (BenchmarkCode code : BenchmarkCode.values()) {
+            tickers.add(code.getTicker());
+        }
         return List.copyOf(tickers);
     }
 
