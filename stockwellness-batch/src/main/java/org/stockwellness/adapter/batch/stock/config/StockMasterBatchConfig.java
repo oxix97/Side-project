@@ -12,12 +12,12 @@ import org.springframework.batch.core.configuration.annotation.StepScope;
 import org.springframework.batch.core.job.builder.JobBuilder;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.builder.StepBuilder;
+import org.springframework.batch.item.ItemProcessor;
 import org.springframework.batch.item.ItemWriter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.dao.TransientDataAccessException;
 import org.springframework.transaction.PlatformTransactionManager;
-import org.stockwellness.adapter.batch.stock.step.processor.StockItemProcessor;
 import org.stockwellness.adapter.batch.stock.step.reader.KosdaqMasterItemReader;
 import org.stockwellness.adapter.batch.stock.step.reader.KospiMasterItemReader;
 import org.stockwellness.adapter.batch.stock.step.tasklet.StockDelistTasklet;
@@ -70,7 +70,7 @@ public class StockMasterBatchConfig {
     @Bean
     public Step kospiUpsertStep(
             KospiMasterItemReader kospiItemReader,
-            StockItemProcessor.Kospi kospiItemProcessor,
+            ItemProcessor<KospiItem, Stock> kospiItemProcessor,
             ItemWriter<Stock> stockItemWriter
     ) {
         return new StepBuilder("kospiUpsertStep", jobRepository)
@@ -98,7 +98,7 @@ public class StockMasterBatchConfig {
     @Bean
     public Step kosdaqUpsertStep(
             KosdaqMasterItemReader kosdaqItemReader,
-            StockItemProcessor.Kosdaq kosdaqItemProcessor,
+            ItemProcessor<KosdaqItem, Stock> kosdaqItemProcessor,
             ItemWriter<Stock> stockItemWriter
     ) {
         return new StepBuilder("kosdaqUpsertStep", jobRepository)
@@ -137,14 +137,18 @@ public class StockMasterBatchConfig {
 
     @Bean
     @StepScope
-    public StockItemProcessor.Kospi kospiItemProcessor() {
-        return new StockItemProcessor.Kospi(stockMasterSyncUseCase);
+    public ItemProcessor<KospiItem, Stock> kospiItemProcessor() {
+        return item -> stockMasterSyncUseCase
+                .upsertKospi(new StockMasterSyncUseCase.KospiMasterSyncCommand(item))
+                .stock();
     }
 
     @Bean
     @StepScope
-    public StockItemProcessor.Kosdaq kosdaqItemProcessor() {
-        return new StockItemProcessor.Kosdaq(stockMasterSyncUseCase);
+    public ItemProcessor<KosdaqItem, Stock> kosdaqItemProcessor() {
+        return item -> stockMasterSyncUseCase
+                .upsertKosdaq(new StockMasterSyncUseCase.KosdaqMasterSyncCommand(item))
+                .stock();
     }
 
     @Bean

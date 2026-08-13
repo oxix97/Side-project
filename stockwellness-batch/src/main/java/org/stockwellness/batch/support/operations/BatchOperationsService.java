@@ -305,7 +305,7 @@ public class BatchOperationsService implements BatchControlUseCase, BatchMonitor
     }
 
     private String normalizePriceDate(String rawDate, boolean applyLowerBound) {
-        LocalDate date = parseFlexibleDate(rawDate);
+        LocalDate date = DateUtil.parseFlexible(rawDate);
         if (date == null) {
             return null;
         }
@@ -316,17 +316,7 @@ public class BatchOperationsService implements BatchControlUseCase, BatchMonitor
     }
 
     private String normalizeDate(String rawDate) {
-        LocalDate date = parseFlexibleDate(rawDate);
+        LocalDate date = DateUtil.parseFlexible(rawDate);
         return date != null ? DateUtil.format(date) : null;
-    }
-
-    private LocalDate parseFlexibleDate(String rawDate) {
-        if (rawDate == null || rawDate.isBlank() || "null".equalsIgnoreCase(rawDate)) {
-            return null;
-        }
-        if (rawDate.contains("-")) {
-            return LocalDate.parse(rawDate);
-        }
-        return DateUtil.parse(rawDate);
     }
 }

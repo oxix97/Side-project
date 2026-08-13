@@ -24,7 +24,6 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.stockwellness.adapter.batch.stockprice.step.processor.DailyStockPriceProcessor;
 import org.stockwellness.adapter.batch.stockprice.step.processor.TechnicalIndicatorProcessor;
 import org.stockwellness.adapter.batch.stockprice.step.reader.StockListReader;
-import org.stockwellness.adapter.batch.stockprice.step.writer.StockPriceJdbcItemWriter;
 import org.stockwellness.adapter.batch.stockprice.step.writer.StockPriceListWriter;
 import org.stockwellness.adapter.batch.stockprice.support.StockPriceBatchTargetQuery;
 import org.stockwellness.adapter.batch.stockprice.support.StockPriceSql;
@@ -69,13 +68,13 @@ public class StockPriceStepConfig {
     public Step technicalIndicatorCalculateStep(
             JpaPagingItemReader<Stock> technicalIndicatorStockReader,
             TechnicalIndicatorProcessor technicalIndicatorProcessor,
-            StockPriceJdbcItemWriter stockPriceJdbcItemWriter
+            JdbcBatchItemWriter<StockPrice> stockPriceJdbcWriter
     ) {
         return new StepBuilder("technicalIndicatorCalculateStep", jobRepository)
                 .<Stock, StockPrice>chunk(30, txManager)
                 .reader(technicalIndicatorStockReader)
                 .processor(technicalIndicatorProcessor)
-                .writer(stockPriceJdbcItemWriter)
+                .writer(stockPriceJdbcWriter)
                 .build();
     }
 
@@ -146,11 +145,6 @@ public class StockPriceStepConfig {
     @Bean
     public StockPriceListWriter stockPriceListWriter(JdbcBatchItemWriter<StockPrice> stockPriceJdbcWriter) {
         return new StockPriceListWriter(stockPriceJdbcWriter);
-    }
-
-    @Bean
-    public StockPriceJdbcItemWriter stockPriceJdbcItemWriter(JdbcBatchItemWriter<StockPrice> stockPriceJdbcWriter) {
-        return new StockPriceJdbcItemWriter(stockPriceJdbcWriter);
     }
 
     @Bean

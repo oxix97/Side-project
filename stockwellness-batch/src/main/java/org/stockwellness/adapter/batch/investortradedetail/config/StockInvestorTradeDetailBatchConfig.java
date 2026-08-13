@@ -12,6 +12,7 @@ import org.springframework.batch.core.configuration.annotation.StepScope;
 import org.springframework.batch.core.job.builder.JobBuilder;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.builder.StepBuilder;
+import org.springframework.batch.item.support.ListItemReader;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -19,7 +20,6 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.stockwellness.adapter.batch.investortradedetail.model.InvestorTradeDetailUpdateCommand;
 import org.stockwellness.adapter.batch.investortradedetail.step.processor.StockInvestorTradeDetailProcessor;
-import org.stockwellness.adapter.batch.investortradedetail.step.reader.StockInvestorTradeDetailReader;
 import org.stockwellness.adapter.batch.investortradedetail.step.tasklet.StockInvestorTradeDetailValidationTasklet;
 import org.stockwellness.adapter.batch.investortradedetail.step.writer.StockInvestorTradeDetailWriter;
 import org.stockwellness.adapter.out.external.kis.dto.InvestorTradeDetail;
@@ -66,7 +66,7 @@ public class StockInvestorTradeDetailBatchConfig {
 
     @Bean
     public Step stockInvestorTradeDetailStep(
-            StockInvestorTradeDetailReader stockInvestorTradeDetailReader,
+            ListItemReader<InvestorTradeDetail> stockInvestorTradeDetailReader,
             StockInvestorTradeDetailProcessor stockInvestorTradeDetailProcessor,
             StockInvestorTradeDetailWriter stockInvestorTradeDetailWriter,
             StockInvestorTradeDetailStepLoggingListener stockInvestorTradeDetailStepLoggingListener
@@ -83,8 +83,8 @@ public class StockInvestorTradeDetailBatchConfig {
 
     @Bean
     @StepScope
-    public StockInvestorTradeDetailReader stockInvestorTradeDetailReader() {
-        return new StockInvestorTradeDetailReader(batchService.fetchMergedDetails());
+    public ListItemReader<InvestorTradeDetail> stockInvestorTradeDetailReader() {
+        return new ListItemReader<>(batchService.fetchMergedDetails());
     }
 
     @Bean

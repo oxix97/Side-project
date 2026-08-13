@@ -1,26 +1,20 @@
 package org.stockwellness.adapter.batch.sector.listener;
 
 import java.time.LocalDate;
-import java.util.Optional;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.BatchStatus;
 import org.springframework.batch.core.JobExecution;
 import org.springframework.batch.core.JobExecutionListener;
-import org.springframework.cache.Cache;
-import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Component;
 import org.stockwellness.application.port.in.stock.SectorInsightUseCase;
-import org.stockwellness.batch.support.BatchLogTemplate;
-import org.stockwellness.domain.common.cache.CacheType;
 
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class SectorEodJobListener implements JobExecutionListener {
 
-    private final CacheManager cacheManager;
     private final SectorInsightUseCase sectorInsightUseCase;
 
     @Override
@@ -35,19 +29,8 @@ public class SectorEodJobListener implements JobExecutionListener {
                 sectorInsightUseCase.getTopSectorsByFluctuation(today, null, 10);
                 log.info("섹터 캐시 프리워밍 완료.");
             } catch (Exception e) {
-                log.error(BatchLogTemplate.error("캐시 프리워밍 중 오류 발생"), e);
+                log.error("!!! [ERROR] 캐시 프리워밍 중 오류 발생", e);
             }
         }
-    }
-
-    private void evictSectorCaches() {
-        evictCache(CacheType.SECTOR_RANKING.getCacheName());
-        evictCache(CacheType.SECTOR_DETAIL.getCacheName());
-        evictCache(CacheType.SECTOR_COMPARISON.getCacheName());
-        log.info("섹터 관련 Redis 캐시 무효화 완료.");
-    }
-
-    private void evictCache(String cacheName) {
-        Optional.ofNullable(cacheManager.getCache(cacheName)).ifPresent(Cache::clear);
     }
 }
