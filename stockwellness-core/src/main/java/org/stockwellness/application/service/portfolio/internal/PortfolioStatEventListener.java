@@ -30,13 +30,13 @@ public class PortfolioStatEventListener {
     @Async
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void handlePortfolioUpdated(PortfolioUpdatedEvent event) {
-        log.info("[이벤트] 포트폴리오 {} 변경 감지 - 통계 재계산 시작", event.getPortfolioId());
+        log.info("[이벤트] 포트폴리오 {} 변경 감지 - 통계 재계산 시작", event.portfolioId());
         
         try {
-            portfolioStatBatchService.updatePortfolioStatsBatch(List.of(event.getPortfolioId()));
-            log.info("[이벤트] 포트폴리오 {} 통계 업데이트 완료", event.getPortfolioId());
+            portfolioStatBatchService.updatePortfolioStatsBatch(List.of(event.portfolioId()));
+            log.info("[이벤트] 포트폴리오 {} 통계 업데이트 완료", event.portfolioId());
         } catch (Exception e) {
-            log.error("[이벤트] 포트폴리오 {} 통계 업데이트 실패: {}", event.getPortfolioId(), e.getMessage());
+            log.error("[이벤트] 포트폴리오 {} 통계 업데이트 실패: {}", event.portfolioId(), e.getMessage());
         }
     }
 }

@@ -59,7 +59,7 @@ public class PortfolioCommandService implements ManagePortfolioUseCase {
         portfolio.updateItems(items);
 
         Portfolio saved = portfolioPort.savePortfolio(portfolio);
-        eventPublisher.publishEvent(new PortfolioUpdatedEvent(command.memberId(), saved.getId()));
+        eventPublisher.publishEvent(new PortfolioUpdatedEvent(saved.getId()));
         return saved.getId();
     }
 
@@ -80,7 +80,7 @@ public class PortfolioCommandService implements ManagePortfolioUseCase {
         portfolio.updateItems(simulatedItems.stream().map(SimulatedItem::portfolioItem).toList());
 
         Portfolio saved = portfolioPort.savePortfolio(portfolio);
-        eventPublisher.publishEvent(new PortfolioUpdatedEvent(command.memberId(), saved.getId()));
+        eventPublisher.publishEvent(new PortfolioUpdatedEvent(saved.getId()));
         return new CreateSimulatedPortfolioResult(saved.getId(), asOfDate);
     }
 
@@ -103,7 +103,7 @@ public class PortfolioCommandService implements ManagePortfolioUseCase {
 
         portfolio.updateItems(newItems);
         
-        eventPublisher.publishEvent(new PortfolioUpdatedEvent(command.memberId(), command.portfolioId()));
+        eventPublisher.publishEvent(new PortfolioUpdatedEvent(command.portfolioId()));
     }
 
     @Override
