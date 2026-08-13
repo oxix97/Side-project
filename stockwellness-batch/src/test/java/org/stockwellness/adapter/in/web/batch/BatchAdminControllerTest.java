@@ -4,7 +4,6 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 
-import jakarta.servlet.ServletException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -19,9 +18,6 @@ import org.stockwellness.application.port.in.batch.BatchControlUseCase;
 import org.stockwellness.application.port.in.batch.BatchMonitoringUseCase;
 import org.stockwellness.batch.support.exception.BatchException;
 import org.stockwellness.global.error.ErrorCode;
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.doThrow;
@@ -174,12 +170,25 @@ class BatchAdminControllerTest {
                 .when(dailyBatchOrchestrationService)
                 .runDailyFullSync(null);
 
-        ServletException exception = assertThrows(ServletException.class, () ->
-                mockMvc.perform(post("/api/v1/admin/batch/run-daily-full-sync")
+        mockMvc.perform(post("/api/v1/admin/batch/run-daily-full-sync")
                         .contentType(MediaType.APPLICATION_JSON))
-        );
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(ErrorCode.BATCH_ORCHESTRATION_FAILED.getCode()));
+    }
 
-        BatchException cause = assertInstanceOf(BatchException.class, exception.getCause());
-        assertThat(cause.getErrorCode()).isEqualTo(ErrorCode.BATCH_ORCHESTRATION_FAILED);
+    @Test
+    void runSinglePriceFetchWithoutTickerReturnsInvalidInputResponse() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/batch/fetch-prices/single")
+                        .content("""
+                                {
+                                  "startDate": "20260410",
+                                  "endDate": "20260410"
+                                }
+                                """)
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(ErrorCode.INVALID_INPUT_VALUE.getCode()));
     }
 }

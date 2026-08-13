@@ -19,7 +19,9 @@ import org.stockwellness.adapter.out.external.kis.adapter.KisDailyPriceAdapter;
 import org.stockwellness.adapter.out.external.kis.dto.KisMultiStockPriceDetail;
 import org.stockwellness.application.port.in.batch.BatchControlUseCase;
 import org.stockwellness.application.port.in.batch.BatchMonitoringUseCase;
+import org.stockwellness.batch.support.exception.BatchException;
 import org.stockwellness.global.common.response.ApiResponse;
+import org.stockwellness.global.error.ErrorCode;
 import org.stockwellness.global.util.DateUtil;
 
 @RequiredArgsConstructor
@@ -110,8 +112,8 @@ public class BatchAdminController {
      */
     @PostMapping("/run-daily-full-sync")
     public ApiResponse<Void> runDailyFullSync(@RequestBody(required = false) DailyFullSyncRequest request) {
-        LocalDate businessDate = request != null && StringUtils.hasText(request.getEndDate())
-                ? DateUtil.parse(request.getEndDate())
+        LocalDate businessDate = request != null && StringUtils.hasText(request.endDate())
+                ? DateUtil.parse(request.endDate())
                 : null;
         dailyBatchOrchestrationService.runDailyFullSync(businessDate);
         return ApiResponse.success();
@@ -181,9 +183,9 @@ public class BatchAdminController {
                 new BatchControlUseCase.BatchLaunchCommand(
                         BatchControlUseCase.BatchJobType.STOCK_PRICE_SYNC,
                         null,
-                        request != null ? request.getStartDate() : null,
-                        request != null ? request.getEndDate() : null,
-                        request != null ? request.getEndDate() : null,
+                        request != null ? request.startDate() : null,
+                        request != null ? request.endDate() : null,
+                        request != null ? request.endDate() : null,
                         publishEvent
                 )
         )));
@@ -197,16 +199,16 @@ public class BatchAdminController {
             @RequestBody StockPriceSyncRequest request,
             @RequestParam(defaultValue = "false") boolean publishEvent
     ) {
-        if (request == null || !StringUtils.hasText(request.getTargetTicker())) {
-            throw new IllegalArgumentException("targetTicker는 필수입니다.");
+        if (request == null || !StringUtils.hasText(request.targetTicker())) {
+            throw new BatchException(ErrorCode.INVALID_INPUT_VALUE);
         }
         return ApiResponse.success(toExecutionResponse(batchControlUseCase.launchAsync(
                 new BatchControlUseCase.BatchLaunchCommand(
                         BatchControlUseCase.BatchJobType.STOCK_PRICE_SYNC,
-                        request.getTargetTicker(),
-                        request.getStartDate(),
-                        request.getEndDate(),
-                        request.getEndDate(),
+                        request.targetTicker(),
+                        request.startDate(),
+                        request.endDate(),
+                        request.endDate(),
                         publishEvent
                 )
         )));

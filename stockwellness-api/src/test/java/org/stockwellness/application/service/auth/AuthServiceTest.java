@@ -14,7 +14,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.stockwellness.adapter.out.security.jwt.JwtProperties;
 import org.stockwellness.adapter.out.security.jwt.JwtProvider;
@@ -56,9 +55,6 @@ class AuthServiceTest {
     private OAuthExchangeCodePort oAuthExchangeCodePort;
     @Mock
     private JwtProperties jwtProperties;
-    @Mock
-    private ApplicationEventPublisher eventPublisher;
-
     @BeforeEach
     void setUp() {
         lenient().when(jwtProperties.refreshTokenExpiryMs()).thenReturn(2592000000L);

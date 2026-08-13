@@ -1,6 +1,5 @@
 package org.stockwellness.adapter.in.web.batch;
 
-import jakarta.servlet.ServletException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -9,9 +8,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.stockwellness.application.port.in.batch.BatchControlUseCase;
-import org.stockwellness.batch.support.exception.BatchException;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import org.stockwellness.global.error.ErrorCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -56,11 +53,11 @@ class BenchmarkControllerTest {
 
     @Test
     @DisplayName("배치 수동 실행 API 실패 테스트 - 잘못된 날짜 형식")
-    void syncBenchmarkPrice_invalidDate() {
-        ServletException exception = assertThrows(ServletException.class, () ->
-                mockMvc.perform(post("/api/v1/admin/batch/benchmark-sync")
+    void syncBenchmarkPrice_invalidDate() throws Exception {
+        mockMvc.perform(post("/api/v1/admin/batch/benchmark-sync")
                         .param("startDate", "2026-03-01"))
-        );
-        assertInstanceOf(BatchException.class, exception.getCause());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value(ErrorCode.INVALID_INPUT_VALUE.getCode()));
     }
 }
