@@ -44,4 +44,11 @@ public class SectorIndicator extends AbstractEntity {
         this.adr = adr;
         this.isOverheated = isOverheated;
     }
+
+    public void update(BigDecimal ma20Disparity, BigDecimal rsi14, BigDecimal adr, boolean isOverheated) {
+        this.ma20Disparity = ma20Disparity;
+        this.rsi14 = rsi14;
+        this.adr = adr;
+        this.isOverheated = isOverheated;
+    }
 }

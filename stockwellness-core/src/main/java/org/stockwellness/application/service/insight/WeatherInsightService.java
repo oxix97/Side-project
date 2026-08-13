@@ -50,7 +50,7 @@ public class WeatherInsightService {
                 .toList();
 
         // 4. Save Market Weather
-        MarketWeather marketWeather = MarketWeather.builder()
+        MarketWeather calculatedMarketWeather = MarketWeather.builder()
                 .baseDate(event.baseDate())
                 .marketType(event.marketType())
                 .weatherScore(event.overallScore())
@@ -59,6 +59,19 @@ public class WeatherInsightService {
                 .topSectors(topSectorSummaries)
                 .bottomSectors(bottomSectorSummaries)
                 .build();
+        MarketWeather marketWeather = marketWeatherRepository
+                .findByBaseDateAndMarketType(event.baseDate(), event.marketType())
+                .map(existing -> {
+                    existing.updateCalculation(
+                            calculatedMarketWeather.getWeatherScore(),
+                            calculatedMarketWeather.getWeatherState(),
+                            calculatedMarketWeather.getTopSectors(),
+                            calculatedMarketWeather.getBottomSectors()
+                    );
+                    existing.updateInsight(summary);
+                    return existing;
+                })
+                .orElse(calculatedMarketWeather);
         marketWeatherRepository.save(marketWeather);
 
         // 5. Generate Top Sector Insights (Detailed)
@@ -66,7 +79,7 @@ public class WeatherInsightService {
             String sectorNews = searchApiPort.searchFinancialNews(sector.name() + " 업종 최근 동향");
             var insight = weatherInsightPort.generateSectorWeatherInsight(sector.name(), sector.score(), sectorNews);
 
-            SectorWeather sectorWeather = SectorWeather.builder()
+            SectorWeather calculatedSectorWeather = SectorWeather.builder()
                     .baseDate(event.baseDate())
                     .sectorCode(sector.code())
                     .weatherScore(sector.score())
@@ -74,6 +87,17 @@ public class WeatherInsightService {
                     .aiTitle(insight.title())
                     .aiInsight(insight.insight())
                     .build();
+            SectorWeather sectorWeather = sectorWeatherRepository
+                    .findByBaseDateAndSectorCode(event.baseDate(), sector.code())
+                    .map(existing -> {
+                        existing.updateScore(
+                                calculatedSectorWeather.getWeatherScore(),
+                                calculatedSectorWeather.getWeatherState()
+                        );
+                        existing.updateInsight(insight.title(), insight.insight());
+                        return existing;
+                    })
+                    .orElse(calculatedSectorWeather);
             sectorWeatherRepository.save(sectorWeather);
         }
         

@@ -54,6 +54,22 @@ public class MarketWeather extends AbstractEntity {
         this.bottomSectors = bottomSectors;
     }
 
+    public void updateCalculation(
+            int weatherScore,
+            String weatherState,
+            List<SectorSummary> topSectors,
+            List<SectorSummary> bottomSectors
+    ) {
+        this.weatherScore = weatherScore;
+        this.weatherState = weatherState;
+        this.topSectors = topSectors;
+        this.bottomSectors = bottomSectors;
+    }
+
+    public void updateInsight(String aiSummary) {
+        this.aiSummary = aiSummary;
+    }
+
     public record SectorSummary(
         String code,
         String name,

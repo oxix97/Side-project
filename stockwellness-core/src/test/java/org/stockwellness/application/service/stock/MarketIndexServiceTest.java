@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageRequest;
 import org.stockwellness.adapter.out.persistence.insight.SectorIndicator;
 import org.stockwellness.adapter.out.persistence.insight.repository.SectorIndicatorRepository;
 import org.stockwellness.application.port.in.stock.result.MarketDashboardResult;
@@ -80,7 +81,10 @@ class MarketIndexServiceTest {
         given(sectorIndicatorRepository.findByBaseDateAndSectorCode(baseDate, "0001"))
                 .willReturn(Optional.of(mockIndicator));
         
-        given(sectorIndicatorRepository.findAllBySectorCodeAndBaseDateLessThanEqualOrderByBaseDateDesc(eq("0001"), eq(baseDate)))
+        given(sectorIndicatorRepository.findAllBySectorCodeAndBaseDateLessThanEqualOrderByBaseDateDesc(
+                eq("0001"),
+                eq(baseDate),
+                eq(PageRequest.of(0, 252))))
                 .willReturn(List.of(mockIndicator));
 
         // Note: RollingPercentileCalculator.calculate returns 50 when history.size() < 5

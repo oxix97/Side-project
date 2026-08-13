@@ -1,6 +1,7 @@
 package org.stockwellness.application.service.insight;
 
 import java.math.BigDecimal;
+import java.util.Arrays;
 import java.util.List;
 
 import org.junit.jupiter.api.DisplayName;
@@ -14,6 +15,22 @@ class RollingPercentileCalculatorTest {
     @DisplayName("데이터가 적을 때는 50점을 반환한다")
     void shouldReturnNeutralScoreWhenHistoryIsShort() {
         int score = RollingPercentileCalculator.calculate(BigDecimal.valueOf(105), List.of(BigDecimal.valueOf(105)));
+        assertThat(score).isEqualTo(50);
+    }
+
+    @Test
+    @DisplayName("누락값을 제외한 유효 이력이 5개 미만이면 중립 점수를 반환한다")
+    void shouldReturnNeutralScoreWhenValidHistoryIsShort() {
+        List<BigDecimal> history = Arrays.asList(
+                BigDecimal.valueOf(105),
+                null,
+                null,
+                null,
+                null
+        );
+
+        int score = RollingPercentileCalculator.calculate(BigDecimal.valueOf(105), history);
+
         assertThat(score).isEqualTo(50);
     }
 

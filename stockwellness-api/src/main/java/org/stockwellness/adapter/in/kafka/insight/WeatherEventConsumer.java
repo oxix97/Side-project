@@ -17,10 +17,6 @@ public class WeatherEventConsumer {
     @KafkaListener(topics = "market-score-calculated", groupId = "${spring.kafka.consumer.group-id:stockwellness-insight-group}")
     public void consume(MarketScoreCalculatedEvent event) {
         log.info("📥 Received MarketScoreCalculatedEvent for {} on {}", event.marketType(), event.baseDate());
-        try {
-            weatherInsightService.generateInsights(event);
-        } catch (Exception e) {
-            log.error("❌ Failed to process MarketScoreCalculatedEvent: {}", e.getMessage());
-        }
+        weatherInsightService.generateInsights(event);
     }
 }
