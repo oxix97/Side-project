@@ -13,7 +13,6 @@ import org.springframework.batch.core.JobExecutionListener;
 import org.springframework.batch.item.Chunk;
 import org.springframework.stereotype.Component;
 import org.stockwellness.adapter.out.kafka.batch.KafkaEventPublisher;
-import org.stockwellness.batch.support.BatchLogTemplate;
 import org.stockwellness.domain.stock.price.StockPrice;
 
 @Slf4j
@@ -47,7 +46,7 @@ public class StockPriceSyncEventListener implements ItemWriteListener<List<Stock
         }
 
         if (jobExecution.getStatus().isUnsuccessful()) {
-            log.warn(BatchLogTemplate.error("종목 시세 동기화 잡 실패. 이벤트 발행을 건너뜁니다."));
+            log.warn("!!! [ERROR] 종목 시세 동기화 잡 실패. 이벤트 발행을 건너뜁니다.");
             updatedSymbols.clear();
             return;
         }

@@ -9,12 +9,4 @@ public record BatchExecutionResponse(
         String statusUrl,
         String message
 ) {
-    public static BatchExecutionResponse of(Long executionId, String jobName, String statusUrl) {
-        return new BatchExecutionResponse(
-                executionId,
-                jobName,
-                statusUrl,
-                String.format("배치 잡 [%s]이 시작되었습니다. (ExecutionId: %d)", jobName, executionId)
-        );
-    }
 }
