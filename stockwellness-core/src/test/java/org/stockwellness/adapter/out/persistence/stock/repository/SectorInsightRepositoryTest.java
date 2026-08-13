@@ -121,6 +121,31 @@ class SectorInsightRepositoryTest {
     }
 
     @Test
+    @DisplayName("소급 기준일은 중복 섹터를 제외한 최근 252거래일만 조회한다")
+    void findRecentDistinctBaseDates_LimitsToTradingDays() {
+        LocalDate firstTradingDate = LocalDate.of(2025, 1, 2);
+        List<SectorInsight> insights = java.util.stream.IntStream.range(0, 253)
+                .mapToObj(day -> SectorInsight.of(
+                        "전기전자",
+                        "001",
+                        MarketType.KOSPI,
+                        firstTradingDate.plusDays(day),
+                        SectorIndicators.of(BigDecimal.ONE, BigDecimal.ZERO, 0L, 0L, 0, 0),
+                        null,
+                        false
+                ))
+                .toList();
+        sectorInsightRepository.saveAll(insights);
+        sectorInsightRepository.flush();
+
+        List<LocalDate> dates = sectorInsightRepository.findRecentDistinctBaseDates(PageRequest.of(0, 252));
+
+        assertThat(dates).hasSize(252);
+        assertThat(dates.getFirst()).isEqualTo(firstTradingDate.plusDays(252));
+        assertThat(dates.getLast()).isEqualTo(firstTradingDate.plusDays(1));
+    }
+
+    @Test
     @DisplayName("여러 섹터 코드의 최신 이전 인사이트를 한 번에 조회한다")
     void findLatestBeforeByCodes_Success() {
         LocalDate 기준일 = LocalDate.of(2026, 4, 9);

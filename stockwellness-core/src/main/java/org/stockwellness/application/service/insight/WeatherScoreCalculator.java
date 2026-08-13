@@ -1,28 +1,25 @@
 package org.stockwellness.application.service.insight;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
+import java.util.List;
 
 import org.springframework.stereotype.Component;
+import org.stockwellness.adapter.out.persistence.insight.SectorIndicator;
+import org.stockwellness.domain.stock.insight.MarketWeatherPolicy;
+import org.stockwellness.domain.stock.insight.RollingPercentileCalculator;
 
 @Component
 public class WeatherScoreCalculator {
 
-    public int calculate(BigDecimal trendScore, BigDecimal momentumScore, BigDecimal breadthScore, BigDecimal volatilityScore) {
-        BigDecimal total = trendScore.multiply(new BigDecimal("0.4"))
-                .add(momentumScore.multiply(new BigDecimal("0.2")))
-                .add(breadthScore.multiply(new BigDecimal("0.3")))
-                .add(volatilityScore.multiply(new BigDecimal("0.1")));
-        
-        return total.setScale(0, RoundingMode.HALF_UP).intValue();
-    }
+    public int calculate(SectorIndicator current, List<SectorIndicator> history) {
+        List<BigDecimal> trendHistory = history.stream().map(SectorIndicator::getMa20Disparity).toList();
+        List<BigDecimal> breadthHistory = history.stream().map(SectorIndicator::getAdr).toList();
+        List<BigDecimal> momentumHistory = history.stream().map(SectorIndicator::getRsi14).toList();
 
-    // Helper to convert raw metrics to 0-100 scores
-    public BigDecimal normalizeTrend(BigDecimal price, BigDecimal ma60) {
-        if (ma60 == null || ma60.compareTo(BigDecimal.ZERO) == 0) return new BigDecimal("50");
-        BigDecimal ratio = price.divide(ma60, 4, RoundingMode.HALF_UP).subtract(BigDecimal.ONE).multiply(new BigDecimal("100"));
-        // Example: +10% above ma60 -> 100, -10% below -> 0
-        BigDecimal score = ratio.add(new BigDecimal("5")).multiply(new BigDecimal("5"));
-        return score.max(BigDecimal.ZERO).min(new BigDecimal("100"));
+        int trendScore = RollingPercentileCalculator.calculate(current.getMa20Disparity(), trendHistory);
+        int breadthScore = RollingPercentileCalculator.calculate(current.getAdr(), breadthHistory);
+        int momentumScore = RollingPercentileCalculator.calculate(current.getRsi14(), momentumHistory);
+
+        return MarketWeatherPolicy.DEFAULT.calculateIntegratedScore(trendScore, breadthScore, momentumScore);
     }
 }

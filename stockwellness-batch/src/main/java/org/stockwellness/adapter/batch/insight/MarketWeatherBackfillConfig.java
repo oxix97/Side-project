@@ -23,6 +23,7 @@ import org.springframework.batch.repeat.RepeatStatus;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.stockwellness.adapter.out.persistence.insight.MarketWeather;
 import org.stockwellness.adapter.out.persistence.insight.SectorIndicator;
@@ -32,6 +33,7 @@ import org.stockwellness.adapter.out.persistence.insight.repository.SectorIndica
 import org.stockwellness.adapter.out.persistence.insight.repository.SectorWeatherRepository;
 import org.stockwellness.adapter.out.persistence.stock.repository.SectorInsightRepository;
 import org.stockwellness.domain.stock.insight.SectorInsight;
+import org.stockwellness.domain.stock.insight.MarketWeatherPolicy;
 import org.stockwellness.domain.stock.insight.WeatherState;
 import org.stockwellness.global.util.DateUtil;
 
@@ -94,8 +96,7 @@ public class MarketWeatherBackfillConfig {
         return new StepBuilder("backfillMarketWeatherStep", jobRepository)
                 .tasklet((contribution, chunkContext) -> {
                     String startDateStr = (String) chunkContext.getStepContext().getJobParameters().get("startDate");
-                    LocalDate startDate = DateUtil.parseFlexible(startDateStr);
-                    if (startDate == null) startDate = DateUtil.today().minusDays(365);
+                    LocalDate startDate = resolveStartDate(startDateStr);
 
                     // 일별로 섹터별 점수를 가져와서 시장 전체 기상도 생성
                     LocalDate current = startDate;
@@ -131,7 +132,7 @@ public class MarketWeatherBackfillConfig {
                                     .bottomSectors(bottomSectors)
                                     .build();
 
-                            marketWeatherRepository.save(marketWeather);
+                            saveMarketWeather(marketWeather);
                         }
                         current = current.plusDays(1);
                     }
@@ -151,8 +152,7 @@ public class MarketWeatherBackfillConfig {
     public JpaPagingItemReader<SectorIndicator> sectorIndicatorReader(
             @Value("#{jobParameters['startDate']}") String startDateStr
     ) {
-        LocalDate startDate = DateUtil.parseFlexible(startDateStr);
-        if (startDate == null) startDate = DateUtil.today().minusDays(365);
+        LocalDate startDate = resolveStartDate(startDateStr);
 
         return new JpaPagingItemReaderBuilder<SectorIndicator>()
                 .name("sectorIndicatorReader")
@@ -207,7 +207,18 @@ public class MarketWeatherBackfillConfig {
 
     @Bean
     public ItemWriter<SectorWeather> sectorWeatherWriter() {
-        return items -> sectorWeatherRepository.saveAll(items);
+        return items -> {
+            List<SectorWeather> upserts = items.getItems().stream()
+                    .map(item -> sectorWeatherRepository
+                            .findByBaseDateAndSectorCode(item.getBaseDate(), item.getSectorCode())
+                            .map(existing -> {
+                                existing.updateScore(item.getWeatherScore(), item.getWeatherState());
+                                return existing;
+                            })
+                            .orElse(item))
+                    .toList();
+            sectorWeatherRepository.saveAll(upserts);
+        };
     }
 
     @Bean
@@ -215,8 +226,7 @@ public class MarketWeatherBackfillConfig {
     public JpaPagingItemReader<SectorInsight> backfillReader(
             @Value("#{jobParameters['startDate']}") String startDateStr
     ) {
-        LocalDate startDate = DateUtil.parseFlexible(startDateStr);
-        if (startDate == null) startDate = DateUtil.today().minusDays(365);
+        LocalDate startDate = resolveStartDate(startDateStr);
 
         log.info("🚀 Starting Market Weather Backfill from {}", startDate);
 
@@ -258,6 +268,52 @@ public class MarketWeatherBackfillConfig {
 
     @Bean
     public ItemWriter<SectorIndicator> backfillWriter() {
-        return items -> sectorIndicatorRepository.saveAll(items);
+        return items -> {
+            List<SectorIndicator> upserts = items.getItems().stream()
+                    .map(item -> sectorIndicatorRepository
+                            .findByBaseDateAndSectorCode(item.getBaseDate(), item.getSectorCode())
+                            .map(existing -> {
+                                existing.update(
+                                        item.getMa20Disparity(),
+                                        item.getRsi14(),
+                                        item.getAdr(),
+                                        item.isOverheated()
+                                );
+                                return existing;
+                            })
+                            .orElse(item))
+                    .toList();
+            sectorIndicatorRepository.saveAll(upserts);
+        };
+    }
+
+    LocalDate resolveStartDate(String requestedStartDate) {
+        LocalDate parsed = DateUtil.parseFlexible(requestedStartDate);
+        if (parsed != null) {
+            return parsed;
+        }
+
+        List<LocalDate> recentTradingDates = sectorInsightRepository.findRecentDistinctBaseDates(
+                PageRequest.of(0, MarketWeatherPolicy.DEFAULT.rollingWindowDays())
+        );
+        return recentTradingDates.isEmpty()
+                ? DateUtil.today()
+                : recentTradingDates.getLast();
+    }
+
+    void saveMarketWeather(MarketWeather calculated) {
+        MarketWeather target = marketWeatherRepository
+                .findByBaseDateAndMarketType(calculated.getBaseDate(), calculated.getMarketType())
+                .map(existing -> {
+                    existing.updateCalculation(
+                            calculated.getWeatherScore(),
+                            calculated.getWeatherState(),
+                            calculated.getTopSectors(),
+                            calculated.getBottomSectors()
+                    );
+                    return existing;
+                })
+                .orElse(calculated);
+        marketWeatherRepository.save(target);
     }
 }

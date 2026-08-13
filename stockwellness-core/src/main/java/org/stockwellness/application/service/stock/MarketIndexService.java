@@ -12,6 +12,7 @@ import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.stockwellness.adapter.out.persistence.insight.SectorIndicator;
@@ -101,8 +102,13 @@ public class MarketIndexService implements MarketIndexUseCase {
             return marketWeatherClassifier.classify(new MarketWeatherScore(50, 50, 50, 50), asOfDate);
         }
 
-        List<SectorIndicator> history = sectorIndicatorRepository.findAllBySectorCodeAndBaseDateLessThanEqualOrderByBaseDateDesc(
-                marketCode, asOfDate);
+        MarketWeatherPolicy policy = MarketWeatherPolicy.DEFAULT;
+        List<SectorIndicator> history = sectorIndicatorRepository
+                .findAllBySectorCodeAndBaseDateLessThanEqualOrderByBaseDateDesc(
+                        marketCode,
+                        asOfDate,
+                        PageRequest.of(0, policy.rollingWindowDays())
+                );
 
         List<BigDecimal> trendHistory = history.stream().map(SectorIndicator::getMa20Disparity).toList();
         List<BigDecimal> breadthHistory = history.stream().map(SectorIndicator::getAdr).toList();
@@ -112,12 +118,7 @@ public class MarketIndexService implements MarketIndexUseCase {
         int breadthScore = RollingPercentileCalculator.calculate(currentIndicator.getAdr(), breadthHistory);
         int momentumScore = RollingPercentileCalculator.calculate(currentIndicator.getRsi14(), momentumHistory);
 
-        MarketWeatherPolicy policy = MarketWeatherPolicy.DEFAULT;
-        int integratedScore = BigDecimal.valueOf(trendScore).multiply(policy.trendWeight())
-                .add(BigDecimal.valueOf(breadthScore).multiply(policy.breadthWeight()))
-                .add(BigDecimal.valueOf(momentumScore).multiply(policy.momentumWeight()))
-                .setScale(0, RoundingMode.HALF_UP)
-                .intValue();
+        int integratedScore = policy.calculateIntegratedScore(trendScore, breadthScore, momentumScore);
 
         MarketWeatherScore score = new MarketWeatherScore(trendScore, breadthScore, momentumScore, integratedScore);
 

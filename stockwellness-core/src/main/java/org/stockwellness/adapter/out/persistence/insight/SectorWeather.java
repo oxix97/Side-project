@@ -44,4 +44,14 @@ public class SectorWeather extends AbstractEntity {
         this.aiTitle = aiTitle;
         this.aiInsight = aiInsight;
     }
+
+    public void updateScore(int weatherScore, String weatherState) {
+        this.weatherScore = weatherScore;
+        this.weatherState = weatherState;
+    }
+
+    public void updateInsight(String aiTitle, String aiInsight) {
+        this.aiTitle = aiTitle;
+        this.aiInsight = aiInsight;
+    }
 }

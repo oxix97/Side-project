@@ -2,7 +2,6 @@ package org.stockwellness.domain.stock.insight;
 
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.stream.Collectors;
 
 public class RollingPercentileCalculator {
 
@@ -16,16 +15,16 @@ public class RollingPercentileCalculator {
      * @return 백분위수 점수 (0-100)
      */
     public static int calculate(BigDecimal currentValue, List<BigDecimal> history) {
-        if (currentValue == null || history == null || history.size() < 5) {
+        if (currentValue == null || history == null) {
             return 50;
         }
 
         List<BigDecimal> sortedHistory = history.stream()
                 .filter(val -> val != null)
                 .sorted()
-                .collect(Collectors.toList());
+                .toList();
 
-        if (sortedHistory.isEmpty()) {
+        if (sortedHistory.size() < 5) {
             return 50;
         }
 

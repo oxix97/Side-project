@@ -10,6 +10,7 @@ import org.springframework.cloud.contract.wiremock.AutoConfigureWireMock;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.stockwellness.adapter.out.external.kis.exception.KisAuthenticationException;
@@ -29,6 +30,7 @@ import static org.mockito.Mockito.verify;
 })
 @ActiveProfiles("test")
 @AutoConfigureWireMock(port = 0)
+@DirtiesContext(classMode = DirtiesContext.ClassMode.BEFORE_CLASS)
 class KisTokenAdapterWireMockTest {
 
     @Autowired
