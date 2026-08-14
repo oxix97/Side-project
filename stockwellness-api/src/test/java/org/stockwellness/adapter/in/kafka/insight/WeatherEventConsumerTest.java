@@ -8,10 +8,13 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.kafka.annotation.DltHandler;
+import org.springframework.kafka.annotation.RetryableTopic;
 import org.stockwellness.application.port.out.messaging.MarketScoreCalculatedEvent;
 import org.stockwellness.application.service.insight.WeatherInsightService;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.doThrow;
 
 @ExtendWith(MockitoExtension.class)
@@ -35,5 +38,24 @@ class WeatherEventConsumerTest {
 
         assertThatThrownBy(() -> consumer.consume(event))
                 .isSameAs(failure);
+    }
+
+    @Test
+    @DisplayName("시장 점수 이벤트는 1초와 2초 간격으로 총 3회 처리한 뒤 DLT로 보낸다")
+    void retryPolicyUsesThreeAttemptsAndDlt() throws Exception {
+        RetryableTopic retryableTopic = WeatherEventConsumer.class
+                .getMethod("consume", MarketScoreCalculatedEvent.class)
+                .getAnnotation(RetryableTopic.class);
+
+        assertThat(retryableTopic).isNotNull();
+        assertThat(retryableTopic.attempts()).isEqualTo("3");
+        assertThat(retryableTopic.backoff().delay()).isEqualTo(1_000L);
+        assertThat(retryableTopic.backoff().multiplier()).isEqualTo(2.0);
+        assertThat(retryableTopic.kafkaTemplate()).isEqualTo("kafkaTemplate");
+        assertThat(retryableTopic.dltTopicSuffix()).isEqualTo("-dlt");
+        assertThat(WeatherEventConsumer.class
+                .getMethod("handleDlt", MarketScoreCalculatedEvent.class)
+                .isAnnotationPresent(DltHandler.class))
+                .isTrue();
     }
 }
