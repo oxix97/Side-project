@@ -76,7 +76,7 @@ public class SectorAnalysisService {
         SectorIndicators indicators = SectorIndicators.of(
                 currentData.sectorIndexCurrentPrice(),
                 currentData.avgFluctuationRate(),
-                BigDecimal.ZERO, // advanceRatio placeholder
+                currentData.advanceRatio(),
                 currentData.netForeignBuyAmount(),
                 currentData.netInstBuyAmount(),
                 foreignConsecutiveDays,

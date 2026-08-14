@@ -10,6 +10,8 @@ public class KafkaTopicConfig {
 
     public static final String STOCK_PRICE_UPDATED_TOPIC = "stock-price-updated";
     public static final String PORTFOLIO_ANALYSIS_COMPLETED_TOPIC = "portfolio-analysis-completed";
+    public static final String MARKET_SCORE_CALCULATED_TOPIC = "market-score-calculated";
+    public static final String MARKET_SCORE_CALCULATED_DLT_TOPIC = "market-score-calculated-dlt";
 
     @Bean
     public NewTopic stockPriceUpdatedTopic() {

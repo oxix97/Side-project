@@ -21,6 +21,7 @@ import org.stockwellness.adapter.out.persistence.insight.SectorIndicator;
 import org.stockwellness.adapter.out.persistence.insight.repository.SectorIndicatorRepository;
 import org.stockwellness.adapter.out.persistence.stock.repository.SectorInsightRepository;
 import org.stockwellness.application.port.out.messaging.MarketScoreCalculatedEvent;
+import org.stockwellness.application.service.insight.MarketScoreCalculationService;
 import org.stockwellness.application.service.insight.WeatherScoreCalculator;
 import org.stockwellness.domain.stock.MarketType;
 import org.stockwellness.domain.stock.insight.SectorIndicators;
@@ -55,8 +56,11 @@ class MarketWeatherBatchConfigTest {
                 transactionManager,
                 entityManagerFactory,
                 sectorIndicatorRepository,
-                sectorInsightRepository,
-                new WeatherScoreCalculator(),
+                new MarketScoreCalculationService(
+                        sectorIndicatorRepository,
+                        sectorInsightRepository,
+                        new WeatherScoreCalculator()
+                ),
                 kafkaTemplate
         );
     }
@@ -116,6 +120,26 @@ class MarketWeatherBatchConfigTest {
         assertThatThrownBy(() -> config.buildMarketScoreEvents(targetDate))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("002");
+    }
+
+    @Test
+    @DisplayName("일일 배치도 원천 가격·MA20·ADR·RSI 누락을 지표로 변환하지 않는다")
+    void sectorIndicatorProcessor_RejectsMissingRequiredMetric() {
+        LocalDate targetDate = LocalDate.of(2026, 8, 12);
+        SectorInsight incomplete = SectorInsight.of(
+                "전기전자",
+                "001",
+                MarketType.KOSPI,
+                targetDate,
+                SectorIndicators.of(BigDecimal.ONE, BigDecimal.ZERO, null, 0L, 0L, 0, 0),
+                null,
+                false
+        );
+
+        assertThatThrownBy(() -> config.sectorIndicatorProcessor().process(incomplete))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("001")
+                .hasMessageContaining(targetDate.toString());
     }
 
     @Test

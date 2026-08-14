@@ -20,6 +20,7 @@ public interface BatchControlUseCase {
         PORTFOLIO_STATS_SYNC("portfolioStatsJob"),
         BENCHMARK_PRICE_SYNC("benchmarkPriceSyncJob"),
         STOCK_FOREIGN_INSTITUTION("stockInvestorTradeDetailJob"),
+        MARKET_WEATHER_BACKFILL("backfillMarketWeatherJob"),
         MARKET_INDEX_SYNC("MarketIndexSync");
 
         private final String jobName;

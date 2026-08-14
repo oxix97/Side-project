@@ -130,39 +130,17 @@ public class OpenAiAdapter implements LlmClientPort, LoadPortfolioAiPort, LoadSe
     }
 
     @Override
-    @Retryable(
-            retryFor = {Exception.class},
-            maxAttempts = 3,
-            backoff = @Backoff(delay = 2000, multiplier = 2.0)
-    )
     public String generateMarketWeatherSummary(int score, String marketType, String newsContext) {
         String system = promptTemplateMapper.getMarketWeatherSystemInstruction();
         String user = promptTemplateMapper.toMarketWeatherPrompt(marketType, score, newsContext);
-
-        try {
-            return executeAiCall(system, user, String.class, "Market Weather Summary");
-        } catch (Exception e) {
-            log.error("❌ Market Weather Summary Failed: {}", e.getMessage());
-            return "현재 시장 지표를 분석 중입니다. 잠시 후 다시 확인해 주세요.";
-        }
+        return executeAiCall(system, user, String.class, "Market Weather Summary");
     }
 
     @Override
-    @Retryable(
-            retryFor = {Exception.class},
-            maxAttempts = 3,
-            backoff = @Backoff(delay = 2000, multiplier = 2.0)
-    )
     public SectorWeatherInsight generateSectorWeatherInsight(String sectorName, int score, String newsContext) {
         String system = promptTemplateMapper.getSectorWeatherSystemInstruction();
         String user = promptTemplateMapper.toSectorWeatherPrompt(sectorName, score, newsContext);
-
-        try {
-            return executeAiCall(system, user, SectorWeatherInsight.class, "Sector Weather Insight");
-        } catch (Exception e) {
-            log.error("❌ Sector Weather Insight Failed: {}", e.getMessage());
-            return new SectorWeatherInsight(sectorName + " 분석", "현재 기술 지표를 분석 중입니다.");
-        }
+        return executeAiCall(system, user, SectorWeatherInsight.class, "Sector Weather Insight");
     }
 
     /**
