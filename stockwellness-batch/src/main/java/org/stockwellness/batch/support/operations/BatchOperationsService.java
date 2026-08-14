@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.batch.core.BatchStatus;
@@ -35,12 +36,13 @@ import org.stockwellness.global.util.DateUtil;
 public class BatchOperationsService implements BatchControlUseCase, BatchMonitoringUseCase {
 
     private static final LocalDate MIN_PRICE_SYNC_DATE = LocalDate.of(2022, 1, 1);
-    private static final Set<BatchJobType> KIS_BOUND_JOB_TYPES = EnumSet.of(
+    private static final Set<BatchJobType> NON_CONCURRENT_JOB_TYPES = EnumSet.of(
             BatchJobType.STOCK_MASTER_SYNC,
             BatchJobType.STOCK_PRICE_SYNC,
             BatchJobType.SECTOR_EOD_SYNC,
             BatchJobType.BENCHMARK_PRICE_SYNC,
-            BatchJobType.STOCK_FOREIGN_INSTITUTION
+            BatchJobType.STOCK_FOREIGN_INSTITUTION,
+            BatchJobType.MARKET_WEATHER_BACKFILL
     );
 
     private final JobLauncher jobLauncher;
@@ -54,6 +56,7 @@ public class BatchOperationsService implements BatchControlUseCase, BatchMonitor
     private final Job portfolioStatsJob;
     private final Job benchmarkPriceSyncJob;
     private final Job stockInvestorTradeDetailJob;
+    private final Job backfillMarketWeatherJob;
     private final StockPort stockPort;
     private final MarketIndexSyncService marketIndexSyncService;
     private final StockPriceRepository stockPriceRepository;
@@ -70,6 +73,7 @@ public class BatchOperationsService implements BatchControlUseCase, BatchMonitor
             @Qualifier("portfolioStatsJob") Job portfolioStatsJob,
             @Qualifier("benchmarkPriceSyncJob") Job benchmarkPriceSyncJob,
             @Qualifier("stockInvestorTradeDetailJob") Job stockInvestorTradeDetailJob,
+            @Qualifier("backfillMarketWeatherJob") Job backfillMarketWeatherJob,
             StockPort stockPort,
             MarketIndexSyncService marketIndexSyncService,
             StockPriceRepository stockPriceRepository
@@ -85,15 +89,16 @@ public class BatchOperationsService implements BatchControlUseCase, BatchMonitor
         this.portfolioStatsJob = portfolioStatsJob;
         this.benchmarkPriceSyncJob = benchmarkPriceSyncJob;
         this.stockInvestorTradeDetailJob = stockInvestorTradeDetailJob;
+        this.backfillMarketWeatherJob = backfillMarketWeatherJob;
         this.stockPort = stockPort;
         this.marketIndexSyncService = marketIndexSyncService;
         this.stockPriceRepository = stockPriceRepository;
     }
 
     @Override
-    public BatchExecutionResult launchAsync(BatchLaunchCommand command) {
+    public synchronized BatchExecutionResult launchAsync(BatchLaunchCommand command) {
         Job job = resolveJob(command.jobType());
-        ensureNoRunningPriceSync(command, job);
+        ensureNoConcurrentRun(command);
         JobParameters parameters = buildParameters(command);
         return toResult(runJob(asyncJobLauncher, job, parameters));
     }
@@ -101,7 +106,7 @@ public class BatchOperationsService implements BatchControlUseCase, BatchMonitor
     @Override
     public BatchExecutionResult launchSync(BatchLaunchCommand command) {
         Job job = resolveJob(command.jobType());
-        ensureNoRunningPriceSync(command, job);
+        ensureNoConcurrentRun(command);
         JobParameters parameters = buildParameters(command);
         return toResult(runJob(jobLauncher, job, parameters));
     }
@@ -215,6 +220,7 @@ public class BatchOperationsService implements BatchControlUseCase, BatchMonitor
             case PORTFOLIO_STATS_SYNC -> portfolioStatsJob;
             case BENCHMARK_PRICE_SYNC -> benchmarkPriceSyncJob;
             case STOCK_FOREIGN_INSTITUTION -> stockInvestorTradeDetailJob;
+            case MARKET_WEATHER_BACKFILL -> backfillMarketWeatherJob;
             case MARKET_INDEX_SYNC -> throw new IllegalArgumentException("MARKET_INDEX_SYNC는 Job이 아닌 직접 동기화입니다.");
         };
     }
@@ -228,8 +234,8 @@ public class BatchOperationsService implements BatchControlUseCase, BatchMonitor
         }
     }
 
-    private void ensureNoRunningPriceSync(BatchLaunchCommand command, Job job) {
-        if (!KIS_BOUND_JOB_TYPES.contains(command.jobType())) {
+    private void ensureNoConcurrentRun(BatchLaunchCommand command) {
+        if (!NON_CONCURRENT_JOB_TYPES.contains(command.jobType())) {
             return;
         }
 
@@ -239,7 +245,7 @@ public class BatchOperationsService implements BatchControlUseCase, BatchMonitor
             return;
         }
 
-        log.warn("[배치] KIS 연동 배치 중복 실행 차단 jobType={}, jobName={}, runningExecutionCount={}",
+        log.warn("[배치] 중복 실행 차단 jobType={}, jobName={}, runningExecutionCount={}",
                 command.jobType(), jobName, runningExecutions.size());
         throw new BatchException(ErrorCode.BATCH_JOB_ALREADY_RUNNING);
     }
@@ -250,6 +256,7 @@ public class BatchOperationsService implements BatchControlUseCase, BatchMonitor
         JobParametersBuilder builder = new JobParametersBuilder();
         switch (command.jobType()) {
             case STOCK_MASTER_SYNC, SECTOR_EOD_SYNC, STOCK_PRICE_SYNC, STOCK_PRICE_PREV_CLOSE_SYNC, PORTFOLIO_STATS_SYNC, STOCK_FOREIGN_INSTITUTION -> builder.addLong("time", System.currentTimeMillis());
+            case MARKET_WEATHER_BACKFILL -> builder.addString("runId", UUID.randomUUID().toString());
             case BENCHMARK_PRICE_SYNC -> builder.addLong("timestamp", System.currentTimeMillis());
             case MARKET_INDEX_SYNC -> {
             }

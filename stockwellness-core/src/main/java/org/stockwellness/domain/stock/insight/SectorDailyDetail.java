@@ -1,6 +1,7 @@
 package org.stockwellness.domain.stock.insight;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 
 import jakarta.persistence.Column;
@@ -141,6 +142,26 @@ public class SectorDailyDetail extends AbstractEntity {
     public void update(String sectorName, SectorDailyDetailSnapshot snapshot) {
         this.sectorName = sectorName;
         apply(snapshot);
+    }
+
+    public BigDecimal calculateAdvanceDeclineRatio() {
+        if (risingIssueCount == null
+                || upperLimitIssueCount == null
+                || fallingIssueCount == null
+                || lowerLimitIssueCount == null) {
+            throw new IllegalStateException(
+                    "ADR 원천 종목 수가 누락되었습니다: " + baseDate + ", " + sectorCode
+            );
+        }
+
+        int advancing = risingIssueCount + upperLimitIssueCount;
+        int declining = fallingIssueCount + lowerLimitIssueCount;
+        if (advancing == 0 && declining == 0) {
+            return BigDecimal.valueOf(100);
+        }
+        return BigDecimal.valueOf(advancing)
+                .multiply(BigDecimal.valueOf(100))
+                .divide(BigDecimal.valueOf(Math.max(declining, 1)), 2, RoundingMode.HALF_UP);
     }
 
     private void apply(SectorDailyDetailSnapshot snapshot) {

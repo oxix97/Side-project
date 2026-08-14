@@ -104,6 +104,7 @@ public class SectorApiItemReader implements ItemReader<SectorApiDto> {
                 detail.getBaseDate(),
                 detail.getCurrentPrice(),
                 detail.getChangeRate(),
+                detail.calculateAdvanceDeclineRatio(),
                 detail.getNetForeignBuyAmount(),
                 detail.getNetInstBuyAmount()
         );

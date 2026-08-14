@@ -86,6 +86,7 @@ class SectorApiItemReaderTest {
         assertThat(result.sectorName()).isEqualTo("전기전자");
         assertThat(result.sectorIndexCurrentPrice()).isEqualByComparingTo("1000.12");
         assertThat(result.avgFluctuationRate()).isEqualByComparingTo("1.23");
+        assertThat(result.advanceRatio()).isEqualByComparingTo("366.67");
         assertThat(result.netForeignBuyAmount()).isEqualTo(100L);
         assertThat(result.netInstBuyAmount()).isEqualTo(50L);
         verify(sectorEodSyncUseCase).prepareSync(today, List.of("0029"));

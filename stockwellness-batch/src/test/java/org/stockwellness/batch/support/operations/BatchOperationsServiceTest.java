@@ -1,7 +1,9 @@
 package org.stockwellness.batch.support.operations;
 
+import java.lang.reflect.Modifier;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -72,6 +74,9 @@ class BatchOperationsServiceTest {
 
     @Mock
     private Job stockInvestorTradeDetailJob;
+
+    @Mock
+    private Job backfillMarketWeatherJob;
 
     @Mock
     private StockPort stockPort;
@@ -147,6 +152,34 @@ class BatchOperationsServiceTest {
     }
 
     @Test
+    @DisplayName("시장 날씨 소급 배치는 고유 실행 파라미터만 추가한다")
+    void buildParameters_marketWeatherBackfill_addsOnlyRunId() {
+        JobParameters parameters = ReflectionTestUtils.invokeMethod(batchOperationsService, "buildParameters",
+                new BatchControlUseCase.BatchLaunchCommand(
+                        BatchControlUseCase.BatchJobType.MARKET_WEATHER_BACKFILL,
+                        null,
+                        null,
+                        null,
+                        null,
+                        false
+                ));
+
+        assertThat(UUID.fromString(parameters.getString("runId"))).isNotNull();
+        assertThat(parameters.getLong("time")).isNull();
+        assertThat(parameters.getParameters()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("비동기 배치의 중복 검사와 실행 요청은 하나의 임계 구역에서 처리한다")
+    void launchAsync_serializesConcurrentChecksAndLaunches() throws Exception {
+        int modifiers = BatchOperationsService.class
+                .getMethod("launchAsync", BatchControlUseCase.BatchLaunchCommand.class)
+                .getModifiers();
+
+        assertThat(Modifier.isSynchronized(modifiers)).isTrue();
+    }
+
+    @Test
     @DisplayName("시세 동기화 배치가 이미 실행 중이면 중복 실행을 차단한다")
     void launchAsync_stockPriceSync_blocksWhenJobAlreadyRunning() throws Exception {
         given(jobExplorer.findRunningJobExecutions("stockPriceBatchJob"))
@@ -179,6 +212,28 @@ class BatchOperationsServiceTest {
                 null,
                 "20260401",
                 "20260408",
+                null,
+                false
+        );
+
+        assertThatThrownBy(() -> batchOperationsService.launchAsync(command))
+                .isInstanceOfSatisfying(BatchException.class, exception ->
+                        assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.BATCH_JOB_ALREADY_RUNNING));
+
+        verify(asyncJobLauncher, never()).run(ArgumentMatchers.any(), ArgumentMatchers.any());
+    }
+
+    @Test
+    @DisplayName("시장 날씨 소급 배치가 이미 실행 중이면 중복 실행을 차단한다")
+    void launchAsync_marketWeatherBackfill_blocksWhenJobAlreadyRunning() throws Exception {
+        given(jobExplorer.findRunningJobExecutions("backfillMarketWeatherJob"))
+                .willReturn(Set.of(Mockito.mock(JobExecution.class)));
+
+        BatchControlUseCase.BatchLaunchCommand command = new BatchControlUseCase.BatchLaunchCommand(
+                BatchControlUseCase.BatchJobType.MARKET_WEATHER_BACKFILL,
+                null,
+                null,
+                null,
                 null,
                 false
         );

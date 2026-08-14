@@ -9,6 +9,28 @@ public record SectorApiDto(
         LocalDate baseDate,
         BigDecimal sectorIndexCurrentPrice,
         BigDecimal avgFluctuationRate,
+        BigDecimal advanceRatio,
         Long netForeignBuyAmount,
         Long netInstBuyAmount
-) {}
+) {
+    public SectorApiDto(
+            String sectorCode,
+            String sectorName,
+            LocalDate baseDate,
+            BigDecimal sectorIndexCurrentPrice,
+            BigDecimal avgFluctuationRate,
+            Long netForeignBuyAmount,
+            Long netInstBuyAmount
+    ) {
+        this(
+                sectorCode,
+                sectorName,
+                baseDate,
+                sectorIndexCurrentPrice,
+                avgFluctuationRate,
+                BigDecimal.valueOf(100),
+                netForeignBuyAmount,
+                netInstBuyAmount
+        );
+    }
+}

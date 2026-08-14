@@ -6,6 +6,7 @@ import java.time.LocalDate;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
@@ -14,7 +15,13 @@ import org.stockwellness.domain.shared.AbstractEntity;
 
 @Getter
 @Entity
-@Table(name = "sector_indicator")
+@Table(
+        name = "sector_indicator",
+        uniqueConstraints = @UniqueConstraint(
+                name = "uk_sector_indicator_base_date_code",
+                columnNames = {"base_date", "sector_code"}
+        )
+)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class SectorIndicator extends AbstractEntity {
 

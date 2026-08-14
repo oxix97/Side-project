@@ -108,6 +108,23 @@ public class BatchAdminController {
     }
 
     /**
+     * 최근 252거래일 시장 날씨 정량 데이터 소급 배치 실행
+     */
+    @PostMapping("/backfill-market-weather")
+    public ApiResponse<BatchExecutionResponse> runMarketWeatherBackfill() {
+        return ApiResponse.success(toExecutionResponse(batchControlUseCase.launchAsync(
+                new BatchControlUseCase.BatchLaunchCommand(
+                        BatchControlUseCase.BatchJobType.MARKET_WEATHER_BACKFILL,
+                        null,
+                        null,
+                        null,
+                        null,
+                        false
+                )
+        )));
+    }
+
+    /**
      * 스케줄러와 동일한 6단계 일일 오케스트레이션 수동 실행
      */
     @PostMapping("/run-daily-full-sync")

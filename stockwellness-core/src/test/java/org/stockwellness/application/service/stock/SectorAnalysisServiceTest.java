@@ -125,6 +125,7 @@ class SectorAnalysisServiceTest {
                 detail.getBaseDate(),
                 detail.getCurrentPrice(),
                 detail.getChangeRate(),
+                detail.calculateAdvanceDeclineRatio(),
                 detail.getNetForeignBuyAmount(),
                 detail.getNetInstBuyAmount()
         );
@@ -135,6 +136,7 @@ class SectorAnalysisServiceTest {
         assertThat(result.getSectorName()).isEqualTo(detail.getSectorName());
         assertThat(result.getSectorIndexCurrentPrice()).isEqualByComparingTo(detail.getCurrentPrice());
         assertThat(result.getAvgFluctuationRate()).isEqualByComparingTo(detail.getChangeRate());
+        assertThat(result.getIndicators().getAdvanceRatio()).isEqualByComparingTo("366.67");
         assertThat(result.getNetForeignBuyAmount()).isEqualTo(detail.getNetForeignBuyAmount());
         assertThat(result.getNetInstBuyAmount()).isEqualTo(detail.getNetInstBuyAmount());
     }
