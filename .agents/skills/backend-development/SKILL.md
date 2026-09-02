@@ -1,6 +1,6 @@
 ---
 name: backend-development
-description: stockwellness 백엔드 저장소에서 Java, Spring Boot, REST API, 배치, 영속성, Kafka, Redis 또는 금융 도메인 동작을 구현하거나 변경할 때 사용한다.
+description: Use when implementing Java, Spring Boot, REST API, batch, persistence, or financial-domain changes in the stockwellness backend.
 ---
 
 # 백엔드 개발
@@ -11,7 +11,12 @@ description: stockwellness 백엔드 저장소에서 Java, Spring Boot, REST API
 
 ## 작업 절차
 
-1. `AGENTS.md`, 기준 명세, 관련 도메인 코드, 어댑터와 테스트를 읽는다.
+1. `AGENTS.md`, 기준 명세, 관련 도메인 코드, 어댑터와 테스트를 읽는다. 작업에 필요한 문서만 추가로 읽는다.
+   - API·코드 패턴: `docs/code-style.md`
+   - 테스트 전략: `docs/testing.md`
+   - 작업 흐름·실행 명령: `conductor/workflow.md`
+   - 기술 버전·모듈: `build.gradle.kts`, `settings.gradle.kts`; 문서의 고정 버전보다 빌드 파일을 우선한다.
+   - 로컬 인프라: `compose.yaml`과 실제 애플리케이션 설정을 확인하고 `.env` 값은 출력하지 않는다.
 2. `git status`를 확인하고 관련 없는 사용자 변경을 보호한다. 요청 범위로 수정 파일을 제한한다.
 3. 코드를 작성하기 전에 소유권을 정한다.
    - 도메인 규칙과 상태 전이는 `stockwellness-core` 도메인 모델에 둔다.
@@ -19,7 +24,7 @@ description: stockwellness 백엔드 저장소에서 Java, Spring Boot, REST API
    - `stockwellness-api`와 `stockwellness-batch`는 얇은 입력 어댑터로 유지한다.
    - `core -> api`, `core -> batch`, `api <-> batch` 의존성을 만들지 않는다.
 4. 관찰 가능한 동작과 예외 상황을 정의한다. 금융 동작에는 기준일, 단위, 정밀도, 반올림, 누락 데이터, 0과 음수 처리 방식을 명시한다.
-5. 하나의 동작에 집중한 실패 테스트를 작성한다. 설정이나 문법 문제가 아니라 동작 부재 때문에 실패하는지 확인한다.
+5. 하나의 동작에 집중한 실패 테스트를 먼저 작성하고 실행한다. 설정이나 문법 문제가 아니라 동작 부재 때문에 실패하는지 확인한 뒤에만 운영 코드를 작성한다.
 6. 테스트를 통과하는 최소 코드를 구현한다. 인라인 완전 수식 클래스명 대신 import를 사용하고 DTO, Command, Event는 Java `record`로 작성한다.
 7. 표준 응답 래퍼와 `GlobalException(ErrorCode)` 오류 경로를 유지한다. 원시 예외나 비밀값을 노출하지 않는다.
 8. API 계약이 바뀌면 Spring REST Docs 테스트를 수정하고 OpenAPI 결과를 갱신하거나 확인한다. 프론트엔드 호환성도 변경 범위에 포함한다.
@@ -46,10 +51,6 @@ description: stockwellness 백엔드 저장소에서 Java, Spring Boot, REST API
 3. 구현 전에 확인한 실패 테스트
 4. 검증 명령과 결과
 5. 남은 위험 또는 명시적으로 제외한 범위
-
-## 예시
-
-“포트폴리오 분석에 `riskLevel` 추가” 작업은 먼저 도메인에 enum과 경계 규칙을 정의하고, 경계값과 가격 누락 동작을 테스트한다. 이후 `record` DTO로 노출하고 REST Docs/OpenAPI를 수정한 뒤 API 모듈을 확인한다. 컨트롤러에서만 위험도를 계산하거나 계약 테스트를 생략하지 않는다.
 
 ## 흔한 실수
 

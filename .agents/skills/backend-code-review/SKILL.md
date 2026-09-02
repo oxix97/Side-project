@@ -1,6 +1,6 @@
 ---
 name: backend-code-review
-description: stockwellness 백엔드의 PR, 브랜치, 커밋, 로컬 diff, Java·Spring 변경, API 계약, 배치 작업, 영속성 쿼리 또는 금융 도메인 구현을 리뷰할 때 사용한다.
+description: Use when reviewing Java, Spring, API, batch, persistence, or financial-domain changes in the stockwellness backend.
 ---
 
 # 백엔드 코드 리뷰
@@ -11,7 +11,7 @@ description: stockwellness 백엔드의 PR, 브랜치, 커밋, 로컬 diff, Java
 
 ## 리뷰 절차
 
-1. `AGENTS.md`, 기준 명세와 전체 diff를 읽는다. 동작 확인에 필요한 주변 운영 코드와 테스트도 살펴본다.
+1. `AGENTS.md`, 기준 명세와 전체 diff를 읽는다. 동작 확인에 필요한 주변 운영 코드와 테스트도 살펴본다. API·코드 규칙은 `docs/code-style.md`, 테스트 증거는 `docs/testing.md`, 버전·모듈은 실제 Gradle 파일에서 확인하며 관련 없는 문서는 읽지 않는다.
 2. 의도한 동작과 인수 조건을 확인한다. 검증할 수 없는 범위는 추측하지 않고 검증 공백으로 표시한다.
 3. 다음 순서로 검토한다.
    - **아키텍처:** `api,batch -> core` 방향을 지키고 도메인 규칙을 컨트롤러, 배치 단계와 조율 서비스에서 분리한다.
@@ -22,7 +22,7 @@ description: stockwellness 백엔드의 PR, 브랜치, 커밋, 로컬 diff, Java
    - **테스트:** 변경 동작과 실패 경로를 단순 mock이나 정상 경로만이 아닌 의미 있는 테스트가 검증하는지 확인한다.
 4. 각 발견 사항이 검토 중인 변경에서 새로 발생하거나 드러난 문제인지 확인한다. 파일과 줄 위치를 좁게 지정한다.
 5. 요약보다 발견 사항을 먼저 작성한다. 실행 가능한 발견 사항이 없으면 명확히 밝히고 남은 검증 공백을 적는다.
-6. 사용자가 리뷰 결과 파일을 명시적으로 요청하지 않으면 코드를 수정하거나 `code-review.md`를 작성하지 않는다.
+6. 리뷰는 항상 읽기 전용으로 수행한다. 코드는 사용자가 수정 작업을 별도로 요청한 경우에만 변경하고, `code-review.md`는 사용자가 명시적으로 요청한 경우에만 작성한다.
 
 ## 발견 사항 형식
 
@@ -41,19 +41,6 @@ description: stockwellness 백엔드의 PR, 브랜치, 커밋, 로컬 diff, Java
 5. 가장 작은 안전한 수정 방향
 
 마지막에는 사용한 정확한 검증 증거와 함께 `머지 차단`, `조건부 머지` 또는 `머지 가능`으로 판정한다.
-
-## 빠른 참조
-
-| 변경 | 고위험 검토 항목 |
-|---|---|
-| JPA/QueryDSL | SQL 의미, 인덱스, N+1, H2/PostgreSQL 일치 여부 |
-| Batch/Kafka | 멱등성, 재시도, 부분 실패, outbox 순서 |
-| 포트폴리오 지표 | 공식, 날짜 범위, 정밀도, 누락·음수 데이터 |
-| 인증/API | 소유권, 유효성 검사, 오류 계약, REST Docs/OpenAPI |
-
-## 예시
-
-H2 테스트를 통과한 포트폴리오 수익률 쿼리라도 머지 가능으로 판단하기 전에 PostgreSQL 형 변환, 날짜 경계, 가격 누락 행, 원금 0과 API 단위를 확인한다.
 
 ## 흔한 실수
 
