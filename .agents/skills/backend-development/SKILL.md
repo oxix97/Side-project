@@ -7,7 +7,9 @@ description: Use when implementing Java, Spring Boot, REST API, batch, persisten
 
 ## 개요
 
-도메인 소유권, 모듈 의존 방향, API 계약과 금융 데이터 의미를 보존하면서 필요한 최소 변경을 구현한다. 운영 코드를 작성하기 전에 실패하는 테스트로 동작을 증명한다.
+도메인 소유권, 모듈 의존 방향, API 계약과 금융 데이터 의미를 보존하면서 필요한 최소 변경을 구현한다. 동작 변경과 버그 수정은 운영 코드 작성 전에 의미 있는 실패 테스트로 검증한다.
+
+동작에 영향을 주지 않는 문서·표현·생성물 변경은 적합한 정적·시각·생성 검증을 수행한다. 단순히 파일 종류만으로 동작 변경을 제외하지 않는다. 다음 실패 테스트 절차는 동작 변경·버그 수정에 적용한다. 금융·인증·API 동작과 사용자가 지정한 검증은 생략하지 않는다. 적용되는 스킬에 별도의 명시적 예외 승인이 있으면 AGENTS.md의 기존 승인 재사용 규칙을 따른다.
 
 ## 작업 절차
 
@@ -38,7 +40,7 @@ description: Use when implementing Java, Spring Boot, REST API, batch, persisten
 | 코어 도메인 | `./gradlew :stockwellness-core:test --tests "<test-class>"` |
 | API 어댑터·계약 | `./gradlew :stockwellness-api:test --tests "<test-class>"` |
 | 배치 동작 | `./gradlew :stockwellness-batch:test --tests "<test-class>"` |
-| 모듈 간 변경·최종 확인 | `./gradlew clean build` |
+| 모듈 간 변경 또는 출시 검증 | `./gradlew clean build` |
 
 `<test-class>`는 저장소에서 선택한 정확한 테스트로 바꾸며, 자리표시자 명령을 그대로 실행하지 않는다.
 
@@ -48,14 +50,14 @@ description: Use when implementing Java, Spring Boot, REST API, batch, persisten
 
 1. 구현한 동작과 소유 모듈
 2. 예외 상황을 포함한 금융·API 결정
-3. 구현 전에 확인한 실패 테스트
+3. 동작 변경의 실패 테스트 또는 비동작 변경에 선택한 검증과 근거
 4. 검증 명령과 결과
 5. 남은 위험 또는 명시적으로 제외한 범위
 
 ## 흔한 실수
 
 - 비즈니스 규칙을 컨트롤러, 배치 단계 또는 조율 서비스에 둔다.
-- 의미 있는 테스트 실패를 확인하기 전에 운영 코드를 작성한다.
+- 동작 변경에서 의미 있는 테스트 실패를 확인하기 전에 운영 코드를 작성한다.
 - H2 테스트 통과를 PostgreSQL 전용 쿼리의 정확성 증거로 판단한다.
 - REST Docs/OpenAPI와 소비자 영향을 확인하지 않고 응답을 변경한다.
 - 요청과 관계없는 포맷 정리나 리팩터링을 같은 diff에 섞는다.
